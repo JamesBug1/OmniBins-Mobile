@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "889817277774",
+    "firebase_url": "https://omnibins-default-rtdb.firebaseio.com",
+    "project_id": "omnibins",
+    "storage_bucket": "omnibins.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:889817277774:android:c8335a407dc1c5408f2a1f",
+        "android_client_info": {
+          "package_name": "com.omnibins"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "889817277774-2nfpejk0t88cqt4jobtidbf966nnnffg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCKfByXIe4EpUpnCsWadgFYE3ZxtPIIEJc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "889817277774-2nfpejk0t88cqt4jobtidbf966nnnffg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

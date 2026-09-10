@@ -1,0 +1,29 @@
+node_modules
+# Dependencies
+node_modules/
+
+# Android
+android/.gradle/
+android/.cxx/
+android/app/build/
+android/build/
+
+# Gradle
+.gradle/
+
+# React Native
+*.keystore
+*.jks
+
+# APK / AAB
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+omnibins-firebase-adminsdk-*.json
+firebase-debug.log

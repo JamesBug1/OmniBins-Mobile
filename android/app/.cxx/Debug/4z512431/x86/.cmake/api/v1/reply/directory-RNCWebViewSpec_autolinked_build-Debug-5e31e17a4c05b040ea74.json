@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "RNCWebViewSpec_autolinked_build",
+		"source" : "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-webview/android/build/generated/source/codegen/jni"
+	}
+}

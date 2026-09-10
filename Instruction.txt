@@ -1,0 +1,13 @@
+run first in cmd
+cd Documents
+npx @react-native-community/cli init OmniBins_Mobile 
+
+goto Documents then OmniBins_Mobile Folder
+then download the files from the repository to this folder 
+
+then after back to cmd cd again to OmniBins_Mobile Folder then run
+npm install
+npx run-react run-android
+
+Then android be connected via usb or wireless debugging
+npm run android

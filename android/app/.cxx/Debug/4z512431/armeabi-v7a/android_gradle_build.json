@@ -1,0 +1,104 @@
+{
+  "buildFiles": [
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/app/android/src/reactnative/java/io/invertase/firebase/app/generated/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/messaging/android/src/main/java/io/invertase/firebase/messaging/generated/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-maps/android/src/main/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-svg/android/src/main/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-vector-icons/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-webview/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native/ReactAndroid/cmake-utils/default-app-setup/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/james/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/james/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "appmodules",
+      "output": "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/build/intermediates/cxx/Debug/4z512431/obj/armeabi-v7a/libappmodules.so",
+      "runtimeFiles": [
+        "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/build/intermediates/cxx/Debug/4z512431/obj/armeabi-v7a/libreact_codegen_safeareacontext.so",
+        "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/build/intermediates/cxx/Debug/4z512431/obj/armeabi-v7a/libreact_codegen_rnsvg.so",
+        "/home/james/.gradle/caches/8.13/transforms/9cb98245a0cfbf480ca58bf80bd0e2aa/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.armeabi-v7a/libfbjni.so",
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/jsi/libs/android.armeabi-v7a/libjsi.so",
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/reactnative/libs/android.armeabi-v7a/libreactnative.so"
+      ]
+    },
+    "react_codegen_RNCWebViewSpec::@eb48929f9f7453740a6c": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNCWebViewSpec"
+    },
+    "react_codegen_RNFBAppTurboModules::@a0d44c1163aba7af3ea1": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNFBAppTurboModules"
+    },
+    "react_codegen_RNFBMessagingTurboModules::@23361e4831c0e3136ef6": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNFBMessagingTurboModules"
+    },
+    "react_codegen_RNImagePickerSpec::@f66ee9a2efecfb28bee4": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNImagePickerSpec"
+    },
+    "react_codegen_RNMapsSpecs::@5748abef1962d24942ec": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNMapsSpecs"
+    },
+    "react_codegen_RNVectorIconsSpec::@479809fae146501fd34d": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_RNVectorIconsSpec"
+    },
+    "react_codegen_rnsvg::@4f40eb209d0c0b4a3b65": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_rnsvg",
+      "output": "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/build/intermediates/cxx/Debug/4z512431/obj/armeabi-v7a/libreact_codegen_rnsvg.so",
+      "runtimeFiles": [
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/reactnative/libs/android.armeabi-v7a/libreactnative.so",
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/jsi/libs/android.armeabi-v7a/libjsi.so",
+        "/home/james/.gradle/caches/8.13/transforms/9cb98245a0cfbf480ca58bf80bd0e2aa/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.armeabi-v7a/libfbjni.so"
+      ]
+    },
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "react_codegen_safeareacontext",
+      "output": "/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/build/intermediates/cxx/Debug/4z512431/obj/armeabi-v7a/libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "/home/james/.gradle/caches/8.13/transforms/9cb98245a0cfbf480ca58bf80bd0e2aa/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.armeabi-v7a/libfbjni.so",
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/jsi/libs/android.armeabi-v7a/libjsi.so",
+        "/home/james/.gradle/caches/8.13/transforms/77553d19b65f0e0c3f7ead4765005da5/transformed/react-android-0.85.2-debug/prefab/modules/reactnative/libs/android.armeabi-v7a/libreactnative.so"
+      ]
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/james/Android/Sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/james/Android/Sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}
