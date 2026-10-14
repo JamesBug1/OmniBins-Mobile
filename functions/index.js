@@ -3,64 +3,65 @@ const admin = require('firebase-admin');
 
 admin.initializeApp();
 
-// Utility: safe get value
 const getVal = (snap) => (snap && snap.val ? snap.val() : null);
+const normalize = (value) => String(value || '').trim().toLowerCase();
+const valuesFrom = (value) => {
+  if (value === undefined || value === null || value === '') return [];
+  if (Array.isArray(value)) return value.flatMap(valuesFrom);
+  if (typeof value === 'object') return Object.values(value).flatMap(valuesFrom);
+  return [value];
+};
+
+const teamFields = ['assignedToTeam', 'teamName', 'team', 'team_id', 'teamId', 'assignedTeam', 'groupName', 'group', 'department'];
+const userFields = ['assignedTo', 'assignedToUid', 'assignedUserId', 'assigneeId', 'staffId', 'userId', 'uid', 'workerId', 'employeeId', 'assignedEmail', 'staffEmail', 'userEmail', 'assignedStaff'];
+
+const getAssignments = (task) => {
+  const teams = teamFields.flatMap((field) => valuesFrom(task[field])).map(normalize).filter(Boolean);
+  const users = userFields.flatMap((field) => valuesFrom(task[field])).map(normalize).filter(Boolean);
+  return { teams: [...new Set(teams)].sort(), users: [...new Set(users)].sort() };
+};
+
+const getUserTeams = (user) => [
+  ...teamFields,
+  'teams', 'teamNames', 'teamIds', 'groups',
+].flatMap((field) => valuesFrom(user[field])).map(normalize).filter(Boolean);
+
+const getUserIdentities = (id, user) => [
+  id, user.uid, user.id, user.employeeId, user.email,
+].map(normalize).filter(Boolean);
+
+const assignmentKey = (task) => JSON.stringify(getAssignments(task));
 
 // Trigger on create or update of a task. Sends notifications to team members.
 exports.notifyTeamOnTaskAssign = functions.database
   .ref('/tasks/{taskId}')
   .onWrite(async (change, context) => {
-    // Only proceed on create or when assigned team changed.
     const before = getVal(change.before);
     const after = getVal(change.after);
     const taskId = context.params.taskId;
 
-    if (!after) {
-      // deleted
-      return null;
-    }
+    if (!after) return null;
 
-    // If this is an update and team did not change and not a new assignment, still notify on certain transitions
-    const teamName = after.assignedToTeam || after.team || after.group || after.assignedTeam;
-    if (!teamName) return null;
+    const assignments = getAssignments(after);
+    if (!assignments.teams.length && !assignments.users.length) return null;
+    if (before && assignmentKey(before) === assignmentKey(after)) return null;
 
-    // If update and nothing relevant changed, avoid noisy notifications
-    if (before) {
-      const prevTeam = before.assignedToTeam || before.team || before.group || before.assignedTeam;
-      const prevStatus = before.status;
-      const newStatus = after.status;
-      const teamUnchanged = String(prevTeam) === String(teamName);
-      const created = !before;
-      // If team unchanged and status unchanged and not newly created, skip
-      if (teamUnchanged && prevStatus === newStatus && before) {
-        // but still notify if task was just assigned (i.e., created) - handled by absence of before
-        return null;
-      }
-    }
-
-    // Collect FCM tokens from users who belong to this team
     const usersSnap = await admin.database().ref('/users').once('value');
     const users = usersSnap.val() || {};
-    const tokens = [];
-    Object.keys(users).forEach((uid) => {
-      const u = users[uid];
-      if (!u) return;
-      // Check multiple schema variants
-      const uTeams = [];
-      if (u.team) uTeams.push(u.team);
-      if (u.teamName) uTeams.push(u.teamName);
-      if (u.teams && Array.isArray(u.teams)) u.teams.forEach(t => uTeams.push(t));
-      if (u.groups && Array.isArray(u.groups)) u.groups.forEach(t => uTeams.push(t));
-      const matches = uTeams.some(t => String(t) === String(teamName));
-      if (matches && u.fcmToken) tokens.push(u.fcmToken);
-    });
+    const tokens = [...new Set(Object.entries(users).flatMap(([id, user]) => {
+      if (!user || typeof user !== 'object' || !user.fcmToken) return [];
+      const matchesTeam = getUserTeams(user).some((team) => assignments.teams.includes(team));
+      const matchesUser = getUserIdentities(id, user).some((identity) => assignments.users.includes(identity));
+      return matchesTeam || matchesUser ? [user.fcmToken] : [];
+    }))];
 
     if (!tokens.length) {
-      console.log('No tokens for team', teamName);
+      console.log('No FCM tokens matched task assignment', taskId, assignments);
       return null;
     }
 
-    const notificationTitle = after.title || after.name || `Task assigned to ${teamName}`;
+    const assignedTeam = assignments.teams[0];
+    const notificationTitle = after.title || after.name || (assignedTeam ? `Task assigned to ${assignedTeam}` : 'Task assigned to you');
     const notificationBody = after.description || after.body || `Tap to view task ${taskId}`;
 
     const message = {
@@ -94,6 +95,7 @@ exports.notifyTeamOnTaskAssign = functions.database
         }
       } catch (err) {
         console.error('sendMulticast error', err);
+        throw err;
       }
     }
 

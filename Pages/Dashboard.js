@@ -4,13 +4,27 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import { OrangeCleaningIcon, ClipboardCheckIcon } from '../Components/Icons';
 import { auth, db } from '../firebaseConfig';
+import Geolocation from 'react-native-geolocation-service';
 
 const PRIMARY_GREEN = '#00a63e';
+
+const getWeatherDescription = (code) => {
+  if (code === 0) return { condition: 'Clear sky', icon: '☀️' };
+  if ([1, 2].includes(code)) return { condition: 'Partly cloudy', icon: '🌤️' };
+  if (code === 3) return { condition: 'Overcast', icon: '☁️' };
+  if ([45, 48].includes(code)) return { condition: 'Foggy', icon: '🌫️' };
+  if ([51, 53, 55, 56, 57].includes(code)) return { condition: 'Drizzle', icon: '🌦️' };
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { condition: 'Rain', icon: '🌧️' };
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return { condition: 'Snow', icon: '🌨️' };
+  if ([95, 96, 99].includes(code)) return { condition: 'Thunderstorm', icon: '⛈️' };
+  return { condition: 'Current conditions', icon: '🌡️' };
+};
 
 const normalizeTaskValue = (value) => {
   if (value === undefined || value === null) return '';
@@ -250,13 +264,23 @@ const formatTaskTime = (task) => {
 };
 
 const Dashboard = () => {
-  const [bins, setBins] = useState([]);
   const [tasksCount, setTasksCount] = useState({ completed: 0, pending: 0 });
   const [tasks, setTasks] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [currentUserRecord, setCurrentUserRecord] = useState(null);
   const [teamsData, setTeamsData] = useState({});
-  const [nextStop, setNextStop] = useState(null);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [weather, setWeather] = useState(null);
+  const [weatherMessage, setWeatherMessage] = useState('Loading location settings...');
+
+  const upcomingTasks = (tasks || [])
+    .filter((task) => getTaskStatus(task, currentUserRecord, teamsData) !== 'Completed')
+    .sort((a, b) => {
+      const dateA = new Date(getTaskDateValue(a) || 0).getTime();
+      const dateB = new Date(getTaskDateValue(b) || 0).getTime();
+      return dateA - dateB;
+    })
+    .slice(0, 3);
 
   useEffect(() => {
     const currentUser = auth?.currentUser;
@@ -281,9 +305,11 @@ const Dashboard = () => {
         setTeamsData(teams);
 
         const emailLower = (currentUser.email || '').toLowerCase();
-        const match = Object.entries(users).find(([, value]) => {
+        const match = Object.entries(users).find(([id, value]) => {
           if (!value || typeof value !== 'object') return false;
-          return (value.email || '').toLowerCase() === emailLower;
+          return (value.email || '').toLowerCase() === emailLower
+            || id === currentUser.uid
+            || value.uid === currentUser.uid;
         });
 
         if (match && mounted) {
@@ -314,8 +340,6 @@ const Dashboard = () => {
         const list = data
           ? Object.entries(data).map(([key, value]) => ({ id: key, ...(value || {}) }))
           : [];
-        setBins(list);
-
         const binAlerts = [];
         list.forEach((b) => {
           const status = (b.status || '').toString().toLowerCase();
@@ -354,17 +378,6 @@ const Dashboard = () => {
             else pending += 1;
           });
           setTasksCount({ completed, pending });
-
-          const pendingTasks = filteredItems.filter((it) => getTaskStatus(it, currentUserRecord, teamsData) !== 'Completed');
-          const nextTask = pendingTasks
-            .filter((task) => !!getTaskDateValue(task))
-            .sort((a, b) => new Date(getTaskDateValue(a)) - new Date(getTaskDateValue(b)))[0] || null;
-          setNextStop(nextTask ? {
-            id: nextTask.binId || nextTask.bin || nextTask.taskId || nextTask.id || 'BIN',
-            location: nextTask.location || nextTask.address || nextTask.site || 'Unassigned location',
-            time: formatTaskTime(nextTask),
-            date: getTaskDateValue(nextTask),
-          } : null);
         });
       } catch (e) {
         console.warn('Tasks subscription failed', e?.message || e);
@@ -395,6 +408,82 @@ const Dashboard = () => {
       try { if (typeof reportsUnsub === 'function') reportsUnsub(); } catch (e) {}
     };
   }, [currentUserRecord, teamsData]);
+
+  useEffect(() => {
+    let active = true;
+    if (!currentUserRecord) {
+      setWeatherMessage('Loading location settings...');
+      return () => { active = false; };
+    }
+
+    if (!currentUserRecord?.allowLocation) {
+      setWeather(null);
+      setWeatherMessage('Enable location in Profile for local weather');
+      return () => { active = false; };
+    }
+
+    const loadLocalWeather = async () => {
+      try {
+        setWeatherMessage('Getting current location...');
+        if (Platform.OS === 'android') {
+          const [hasFinePermission, hasCoarsePermission] = await Promise.all([
+            PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+            PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION),
+          ]);
+          if (!hasFinePermission && !hasCoarsePermission) {
+            if (active) setWeatherMessage('Allow location permission to see local weather');
+            return;
+          }
+        } else {
+          const authorization = await Geolocation.requestAuthorization('whenInUse');
+          if (authorization !== 'granted') {
+            if (active) setWeatherMessage('Allow location permission to see local weather');
+            return;
+          }
+        }
+
+        const position = await new Promise((resolve, reject) => {
+          Geolocation.getCurrentPosition(resolve, reject, {
+            accuracy: { android: 'high', ios: 'best' },
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 300000,
+            showLocationDialog: true,
+            forceLocationManager: Platform.OS === 'android',
+          });
+        });
+        const { latitude, longitude } = position.coords;
+        if (active) setWeatherMessage('Loading local weather...');
+        const response = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&temperature_unit=celsius&wind_speed_unit=kmh`,
+        );
+        if (!response.ok) throw new Error('Weather service is unavailable');
+        const data = await response.json();
+        if (!data.current) throw new Error('Current weather is unavailable');
+        const description = getWeatherDescription(data.current.weather_code);
+        if (active) {
+          setWeather({
+            ...description,
+            temperature: Math.round(data.current.temperature_2m),
+            humidity: Math.round(data.current.relative_humidity_2m),
+            feelsLike: Math.round(data.current.apparent_temperature),
+            windSpeed: Math.round(data.current.wind_speed_10m),
+          });
+          setWeatherMessage('');
+        }
+      } catch (error) {
+        console.warn('Failed to load local weather', error?.message || error);
+        if (active) {
+          setWeather(null);
+          setWeatherMessage('Local weather unavailable');
+        }
+      }
+    };
+
+    loadLocalWeather();
+    return () => { active = false; };
+  }, [currentUserRecord]);
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -409,65 +498,40 @@ const Dashboard = () => {
         <View style={styles.weatherCard}>
           <View style={styles.weatherLeft}>
             <View style={styles.weatherIconContainer}>
-               <Text style={{fontSize: 40}}>☀️</Text>
-               <View style={styles.cloudOverlay}>
-                  <Text style={{fontSize: 30}}>☁️</Text>
-               </View>
+              <Text style={{ fontSize: 40 }}>{weather?.icon || '🌡️'}</Text>
             </View>
             <View style={styles.tempContainer}>
-              <Text style={styles.temperature}>28°<Text style={styles.tempUnit}>C</Text></Text>
-              <Text style={styles.weatherCondition}>Partly Cloudy</Text>
+              <Text style={styles.temperature}>{weather ? `${weather.temperature}°` : '—'}<Text style={styles.tempUnit}>C</Text></Text>
+              <Text style={styles.weatherCondition} numberOfLines={2}>{weather?.condition || weatherMessage}</Text>
             </View>
           </View>
           <View style={styles.weatherRight}>
-            <Text style={styles.weatherDetail}>Humidity: <Text style={styles.weatherDetailVal}>60%</Text></Text>
-            <Text style={styles.weatherDetail}>Wind: <Text style={styles.weatherDetailVal}>12 km/h</Text></Text>
-            <Text style={styles.weatherDetail}>Feels like: <Text style={styles.weatherDetailVal}>31°C</Text></Text>
+            <Text style={styles.weatherDetail}>Humidity: <Text style={styles.weatherDetailVal}>{weather ? `${weather.humidity}%` : '—'}</Text></Text>
+            <Text style={styles.weatherDetail}>Wind: <Text style={styles.weatherDetailVal}>{weather ? `${weather.windSpeed} km/h` : '—'}</Text></Text>
+            <Text style={styles.weatherDetail}>Feels like: <Text style={styles.weatherDetailVal}>{weather ? `${weather.feelsLike}°C` : '—'}</Text></Text>
           </View>
         </View>
 
-        {/* --- TODAY'S SCHEDULE SECTION --- */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's Schedule</Text>
-          <Text style={styles.dateText}>May 20, 2024</Text>
-        </View>
+        <View style={styles.taskListCard}>
+          <View style={styles.sectionHeaderNoPadding}>
+            <Text style={styles.sectionTitle}>Task List</Text>
+            <Text style={styles.dateText}>{tasks.length} active</Text>
+          </View>
 
-        {bins.length > 0 && (
-          <View style={{ paddingHorizontal: 20, marginTop: 12 }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Nearby Bins</Text>
-            {bins.slice(0, 5).map((b) => (
-              <View key={b.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
-                <Text style={{ fontWeight: '600' }}>{b.id}</Text>
-                <Text style={{ color: '#6b6b6b' }}>{b.location || 'Unknown location'}</Text>
-                <Text style={{ color: '#6b6b6b' }}>Status: {b.status || 'unknown'}</Text>
+          {upcomingTasks.length === 0 ? (
+            <Text style={styles.emptyTaskText}>No pending tasks available.</Text>
+          ) : (
+            upcomingTasks.map((task, index) => (
+              <View key={task.id || index} style={styles.taskListItem}>
+                <View style={styles.taskListDot} />
+                <View style={styles.taskListContent}>
+                  <Text style={styles.taskListTitle}>{task.title || task.name || task.binId || task.bin || 'Task'}</Text>
+                  <Text style={styles.taskListMeta}>{task.location || task.address || task.site || 'No location'} • {formatTaskTime(task)}</Text>
+                  <Text style={styles.taskListStatus}>{getTaskStatus(task, currentUserRecord, teamsData)}</Text>
+                </View>
               </View>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.scheduleCard}>
-          <View style={styles.scheduleInfo}>
-            <Text style={styles.nextStopLabel}>Next Stop</Text>
-            {nextStop ? (
-              <>
-                <Text style={styles.binId}>{nextStop.id}</Text>
-                <Text style={styles.locationText}>{nextStop.location}</Text>
-                <Text style={styles.timeText}>{nextStop.time}</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.binId}>No upcoming task</Text>
-                <Text style={styles.locationText}>No pending task for your team yet.</Text>
-                <Text style={styles.timeText}>—</Text>
-              </>
-            )}
-          </View>
-          <View style={styles.truckContainer}>
-             <Image
-              source={require('../assets/truck.png')}
-              style={styles.truckImage}
-             />
-          </View>
+            ))
+          )}
         </View>
 
         {/* --- TASK STATUS SECTION --- */}
@@ -498,8 +562,11 @@ const Dashboard = () => {
         {/* --- RECENT ALERTS --- */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Alerts</Text>
-          <TouchableOpacity>
-            <Text style={styles.viewAllText}>View All</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => setShowAllAlerts((current) => !current)}
+          >
+            <Text style={styles.viewAllText}>{showAllAlerts ? 'Show Less' : 'View All'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -507,7 +574,7 @@ const Dashboard = () => {
           {alerts.length === 0 ? (
             <Text style={{ paddingHorizontal: 20, color: '#717171' }}>No recent alerts</Text>
           ) : (
-            alerts.map((a) => (
+            (showAllAlerts ? alerts : alerts.slice(0, 3)).map((a) => (
               <View key={a.id + (a.ts||'')} style={styles.alertItem}>
                 <View style={[styles.alertDot, { backgroundColor: a.type === 'Critical' ? '#ef4444' : a.type === 'Full' ? '#f43f5e' : a.type === 'Nearly Full' ? '#f59e0b' : '#3b82f6' }]} />
                 <Text style={styles.alertText}>{a.message}</Text>
@@ -550,7 +617,6 @@ const styles = StyleSheet.create({
   },
   weatherLeft: { flexDirection: 'row', alignItems: 'center' },
   weatherIconContainer: { position: 'relative', marginRight: 15 },
-  cloudOverlay: { position: 'absolute', bottom: -5, right: -5 },
   tempContainer: { justifyContent: 'center' },
   temperature: { fontSize: 34, fontWeight: 'bold', color: '#1c1c1c' },
   tempUnit: { fontSize: 20, color: '#717171' },
@@ -568,37 +634,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1c1c1c' },
   dateText: { fontSize: 13, color: '#717171' },
-  scheduleCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05, shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  scheduleInfo: {
-    flex: 3,
-  },
-  nextStopLabel: { fontSize: 14, color: PRIMARY_GREEN, fontWeight: 'bold', marginBottom: 8 },
-  binId: { fontSize: 18, fontWeight: 'bold', color: '#1c1c1c' },
-  locationText: { fontSize: 14, color: '#717171', marginTop: 4 },
-  timeText: { fontSize: 14, color: '#1c1c1c', fontWeight: 'bold', marginTop: 6 },
-  truckContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    marginRight: 10,
-  },
-  truckImage: {
-    width: 140,
-    height: 100,
-    resizeMode: 'contain',
-  },
   taskContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -625,6 +660,65 @@ const styles = StyleSheet.create({
   taskCount: { fontSize: 22, fontWeight: 'bold', color: '#1c1c1c' },
   taskSub: { fontSize: 10, color: '#717171' },
   viewAllText: { fontSize: 14, color: PRIMARY_GREEN, fontWeight: 'bold' },
+  taskListCard: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 20,
+    marginTop: 18,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  sectionHeaderNoPadding: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  taskListItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  taskListDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: PRIMARY_GREEN,
+    marginTop: 7,
+    marginRight: 12,
+  },
+  taskListContent: {
+    flex: 1,
+  },
+  taskListTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1c1c1c',
+  },
+  taskListMeta: {
+    fontSize: 12,
+    color: '#717171',
+    marginTop: 3,
+  },
+  taskListStatus: {
+    marginTop: 5,
+    color: PRIMARY_GREEN,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyTaskText: {
+    color: '#717171',
+    fontSize: 13,
+    paddingVertical: 8,
+  },
   alertsList: { paddingHorizontal: 20, marginTop: 5 },
   alertItem: {
     flexDirection: 'row',

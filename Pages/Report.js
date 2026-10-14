@@ -14,8 +14,8 @@ import {
   Alert,
 } from 'react-native';
 
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import app, { db } from '../firebaseConfig';
+import { db } from '../firebaseConfig';
+import { SUPABASE_ANON_KEY, SUPABASE_REPORT_BUCKET, SUPABASE_URL } from '../supabaseConfig';
 
 const PRIMARY_GREEN = '#00a63e';
 
@@ -82,7 +82,47 @@ const AlertPage = () => {
 
   const removeImage = () => setImageUri(null);
 
+  const uploadReportImage = async (uri, reportKey) => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      throw new Error('Set SUPABASE_URL and SUPABASE_ANON_KEY in supabaseConfig.js first.');
+    }
+
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Could not read the selected image.');
+    const blob = await response.blob();
+    const imagePath = `reports/${Date.now()}_${reportKey || 'image'}.jpg`;
+    const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');
+    const uploadResponse = await fetch(
+      `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${encodeURIComponent(SUPABASE_REPORT_BUCKET)}/${encodedPath}`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': blob.type || 'image/jpeg',
+          'x-upsert': 'false',
+        },
+        body: blob,
+      },
+    );
+
+    if (!uploadResponse.ok) {
+      const error = await uploadResponse.json().catch(() => null);
+      throw new Error(error?.message || error?.error || `Supabase upload failed (${uploadResponse.status}).`);
+    }
+
+    return `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${encodeURIComponent(SUPABASE_REPORT_BUCKET)}/${encodedPath}`;
+  };
+
   const handleSubmit = () => {
+    const cleanedLocation = location.trim();
+    const cleanedDescription = description.trim();
+
+    if (!cleanedLocation || !cleanedDescription) {
+      Alert.alert('Missing information', 'Please enter both the location and description before submitting the report.');
+      return;
+    }
+
     // require authenticated user before allowing report submission
     const firebaseCfg = require('../firebaseConfig');
     if (!firebaseCfg.auth || !firebaseCfg.auth.currentUser) {
@@ -102,15 +142,10 @@ const AlertPage = () => {
         if (imageUri) {
           try {
             setImageUploading(true);
-            const storage = getStorage(app);
-            const resp = await fetch(imageUri);
-            const blob = await resp.blob();
-            const filename = `reports/${Date.now()}_${newRef.key || 'img'}.jpg`;
-            const sRef = storageRef(storage, filename);
-            await uploadBytes(sRef, blob);
-            imageUrl = await getDownloadURL(sRef);
+            imageUrl = await uploadReportImage(imageUri, newRef.key);
           } catch (e) {
-            console.warn('Image upload failed', e?.message || e);
+            Alert.alert('Image upload failed', e?.message || 'Could not upload the report image.');
+            return;
           } finally {
             setImageUploading(false);
           }
@@ -118,8 +153,8 @@ const AlertPage = () => {
 
         const payload = {
           issueType,
-          location: location || 'Unknown location',
-          description: description || '',
+          location: cleanedLocation,
+          description: cleanedDescription,
           reporter: (require('../firebaseConfig').auth?.currentUser?.email) || null,
           imageUrl: imageUrl,
           createdAt: new Date().toISOString(),
@@ -141,10 +176,10 @@ const AlertPage = () => {
       } finally {
         if (submittedOk) {
           setIsModalVisible(true);
+          setLocation('');
+          setDescription('');
+          setImageUri(null);
         }
-        setLocation('');
-        setDescription('');
-        setImageUri(null);
       }
     })();
   };

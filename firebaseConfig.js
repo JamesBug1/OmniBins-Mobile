@@ -1,8 +1,14 @@
 // Minimal Firebase Web SDK config for React Native JS usage (no native modules)
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, get, update } from 'firebase/database';
+import { getDatabase, ref, get, update, onDisconnect, serverTimestamp } from 'firebase/database';
 import { getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import messaging from '@react-native-firebase/messaging';
+import {
+  AuthorizationStatus,
+  getMessaging,
+  getToken,
+  hasPermission,
+  requestPermission,
+} from '@react-native-firebase/messaging';
 
 // Replace these values if you want to use different envs; using web config from OmniBins web app
 const firebaseConfig = {
@@ -19,6 +25,35 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+
+let activePresenceUserId = null;
+
+export async function markUserOnline(userId) {
+  if (!userId) return;
+
+  const presenceRef = ref(db, `users/${userId}`);
+  await onDisconnect(presenceRef).update({
+    onlineStatus: 'offline',
+    lastSeen: serverTimestamp(),
+  });
+  await update(presenceRef, {
+    onlineStatus: 'online',
+    lastSeen: serverTimestamp(),
+  });
+  activePresenceUserId = userId;
+}
+
+export async function markUserOffline(userId = activePresenceUserId) {
+  if (!userId) return;
+
+  const presenceRef = ref(db, `users/${userId}`);
+  await update(presenceRef, {
+    onlineStatus: 'offline',
+    lastSeen: serverTimestamp(),
+  });
+  await onDisconnect(presenceRef).cancel();
+  if (activePresenceUserId === userId) activePresenceUserId = null;
+}
 
 export async function signInAndAuthorize(email, password) {
   // Sign in with Firebase Auth (web SDK)
@@ -48,10 +83,21 @@ export async function signInAndAuthorize(email, password) {
   }
 
   const [userId, userRecord] = match;
+  if (String(userRecord.status || '').trim().toLowerCase() === 'pending') {
+    await signOut(auth);
+    throw new Error('Account is pending approval');
+  }
+
   // Only allow role 'staff'
   if ((userRecord.role || '').toLowerCase() !== 'staff') {
     await signOut(auth);
     throw new Error('Only staff accounts can sign in to the mobile app');
+  }
+
+  try {
+    await markUserOnline(userId);
+  } catch (error) {
+    console.warn('Could not update user presence', error?.message || error);
   }
 
   return { credential, userId, userRecord };
@@ -61,18 +107,51 @@ export async function registerDeviceTokenForCurrentUser(userId) {
   if (!userId) return null;
 
   try {
-    const authStatus = await messaging().requestPermission();
-    const enabled = authStatus === 1 || authStatus === 2 || authStatus === 'granted';
+    const directUserSnapshot = await get(ref(db, `users/${userId}`));
+    let userRecordId = directUserSnapshot.exists() ? userId : null;
+
+    if (!userRecordId) {
+      const currentUser = auth.currentUser;
+      const usersSnapshot = await get(ref(db, 'users'));
+      const users = usersSnapshot.val() || {};
+      const currentEmail = (currentUser?.email || '').toLowerCase();
+      const matchingUser = Object.entries(users).find(([id, record]) => (
+        id === userId
+        || record?.uid === userId
+        || (currentEmail && (record?.email || '').toLowerCase() === currentEmail)
+      ));
+
+      userRecordId = matchingUser?.[0] || null;
+    }
+
+    if (!userRecordId) {
+      throw new Error('Could not find the signed-in user record in the database.');
+    }
+
+    const messagingInstance = getMessaging();
+    const permissionState = await hasPermission(messagingInstance);
+    const alreadyGranted = permissionState === AuthorizationStatus.AUTHORIZED
+      || permissionState === AuthorizationStatus.PROVISIONAL;
+
+    let authStatus = permissionState;
+    if (!alreadyGranted) {
+      authStatus = await requestPermission(messagingInstance);
+    }
+
+    const enabled = authStatus === AuthorizationStatus.AUTHORIZED
+      || authStatus === AuthorizationStatus.PROVISIONAL;
 
     if (!enabled) {
-      await update(ref(db, `users/${userId}`), { allowNotifications: false });
+      await update(ref(db, `users/${userRecordId}`), { allowNotifications: false });
       return null;
     }
 
-    const token = await messaging().getToken();
-    if (!token) return null;
+    const token = await getToken(messagingInstance);
+    if (!token) {
+      throw new Error('Firebase Messaging did not return a device token.');
+    }
 
-    await update(ref(db, `users/${userId}`), {
+    await update(ref(db, `users/${userRecordId}`), {
       fcmToken: token,
       allowNotifications: true,
       updatedAt: new Date().toISOString(),
@@ -81,11 +160,16 @@ export async function registerDeviceTokenForCurrentUser(userId) {
     return token;
   } catch (e) {
     console.warn('Device token registration failed', e);
-    return null;
+    throw e;
   }
 }
 
 export async function signOutUser() {
+  try {
+    await markUserOffline();
+  } catch (error) {
+    console.warn('Could not mark user offline', error?.message || error);
+  }
   return signOut(auth);
 }
 

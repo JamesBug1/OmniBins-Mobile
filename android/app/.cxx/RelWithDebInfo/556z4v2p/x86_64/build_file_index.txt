@@ -1,0 +1,9 @@
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/app/android/src/reactnative/java/io/invertase/firebase/app/generated/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/messaging/android/src/main/java/io/invertase/firebase/messaging/generated/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-maps/android/src/main/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-svg/android/src/main/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-vector-icons/android/build/generated/source/codegen/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-webview/android/build/generated/source/codegen/jni/CMakeLists.txt
+/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native/ReactAndroid/cmake-utils/default-app-setup/CMakeLists.txt

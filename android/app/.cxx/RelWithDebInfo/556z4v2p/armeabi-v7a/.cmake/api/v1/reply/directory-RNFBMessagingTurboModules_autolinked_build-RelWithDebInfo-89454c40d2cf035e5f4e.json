@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "RNFBMessagingTurboModules_autolinked_build",
+		"source" : "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/messaging/android/src/main/java/io/invertase/firebase/messaging/generated/jni"
+	}
+}

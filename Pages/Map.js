@@ -89,7 +89,7 @@ const normalizeBinRecord = (item = {}) => {
   const resolvedAddress = addressCandidates.find((value) => typeof value === 'string' && value.trim()) || 'Unknown location';
 
   return {
-    id: String(item?.id ?? item?.binId ?? item?.bin_id ?? item?.binID ?? item?.binCode ?? item?.name ?? 'BIN-00'),
+    id: String(item?.node ?? item?.id ?? item?.binId ?? item?.bin_id ?? item?.binID ?? item?.binCode ?? item?.name ?? 'BIN-00'),
     latitude: Number.isFinite(latitude) ? latitude : null,
     longitude: Number.isFinite(longitude) ? longitude : null,
     address: resolvedAddress,
@@ -108,7 +108,7 @@ const buildMapHtml = (items) => {
 
   const markerScript = validBins
     .map((bin, index) => {
-      const key = String(bin.id || `bin-${index}`).replace(/[^a-zA-Z0-9]/g, '');
+      const key = `${String(bin.id || 'bin').replace(/[^a-zA-Z0-9]/g, '')}_${index}`;
       const safeAddress = JSON.stringify(String(bin.address || 'Unknown location'));
       const safeStatus = JSON.stringify(String(bin.status || 'Normal'));
       const safeId = JSON.stringify(String(bin.id || `bin-${index}`));

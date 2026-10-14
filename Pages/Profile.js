@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,11 @@ import {
   Linking,
 } from 'react-native';
 import { ChevronRightIcon } from '../Components/Icons';
-import app, { signOutUser, auth, db } from '../firebaseConfig';
+import app, { signOutUser, auth, db, registerDeviceTokenForCurrentUser } from '../firebaseConfig';
 import { ref, get, update } from 'firebase/database';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { EmailAuthProvider, reauthenticateWithCredential, updatePassword, updateEmail, sendEmailVerification, reload } from 'firebase/auth';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import Geolocation from 'react-native-geolocation-service';
 
 const PRIMARY_GREEN = '#00a63e';
 
@@ -27,17 +28,8 @@ const ProfilePage = ({ onLogout }) => {
   const [userRecord, setUserRecord] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [editingField, setEditingField] = useState(null); // 'phone'|'email'|'employeeId'
+  const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
-
-  const [reauthModalVisible, setReauthModalVisible] = useState(false);
-  const [reauthPassword, setReauthPassword] = useState('');
-  const [reauthLoading, setReauthLoading] = useState(false);
-
-  const [verificationPending, setVerificationPending] = useState(false);
-  const [pendingEmail, setPendingEmail] = useState('');
-  const verifyIntervalRef = useRef(null);
-  const verifyAttemptsRef = useRef(0);
 
   const [showPassModal, setShowPassModal] = useState(false);
   const [currentPass, setCurrentPass] = useState('');
@@ -77,7 +69,15 @@ const ProfilePage = ({ onLogout }) => {
           const nextUser = { id, ...rec };
           setUserRecord(nextUser);
           setAllowNotifications(!!nextUser.allowNotifications);
-          setAllowLocation(!!nextUser.allowLocation);
+          if (Platform.OS === 'android') {
+            const [fineGranted, coarseGranted] = await Promise.all([
+              PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+              PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION),
+            ]);
+            setAllowLocation(!!nextUser.allowLocation && (fineGranted || coarseGranted));
+          } else {
+            setAllowLocation(!!nextUser.allowLocation);
+          }
           setEditValue('');
         }
       } catch (e) {
@@ -144,20 +144,47 @@ const ProfilePage = ({ onLogout }) => {
   };
 
   const requestNotificationPermission = async () => {
-    if (Platform.OS === 'android') {
-      if (Number(Platform.Version) < 33) {
+    const registerNotifications = async () => {
+      try {
+        const token = await registerDeviceTokenForCurrentUser(userRecord?.id);
+        if (!token) {
+          await persistPreference('allowNotifications', false);
+          setAllowNotifications(false);
+          return false;
+        }
+
         await persistPreference('allowNotifications', true);
         setAllowNotifications(true);
+        return true;
+      } catch (e) {
+        console.warn('Notification registration failed', e);
+        Alert.alert('Notifications unavailable', e?.message || 'Could not register this device for notifications.');
+        return null;
+      }
+    };
+
+    if (Platform.OS === 'android') {
+      if (Number(Platform.Version) < 33) {
+        const registered = await registerNotifications();
+        if (registered === false) {
+          Alert.alert('Notifications unavailable', 'Could not register this device for notifications. Please try again.');
+        }
         return;
       }
 
       try {
         const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         const granted = result === PermissionsAndroid.RESULTS.GRANTED;
-        await persistPreference('allowNotifications', granted);
-        setAllowNotifications(granted);
         if (!granted) {
+          await persistPreference('allowNotifications', false);
+          setAllowNotifications(false);
           Alert.alert('Notifications blocked', 'Enable notifications in your phone settings to receive updates.');
+          return;
+        }
+
+        const registered = await registerNotifications();
+        if (registered === false) {
+          Alert.alert('Notifications unavailable', 'Could not register this device for notifications. Please try again.');
         }
       } catch (e) {
         console.warn('Notification permission request failed', e);
@@ -166,20 +193,24 @@ const ProfilePage = ({ onLogout }) => {
       return;
     }
 
-    // iOS requires native settings, so we keep the toggle state in the app and prompt the user to enable it manually.
-    await persistPreference('allowNotifications', true);
-    setAllowNotifications(true);
-    Alert.alert('Notification permission', 'Please enable notifications for OmniBins in your iPhone Settings.');
-    Linking.openSettings();
+    const registered = await registerNotifications();
+    if (registered === false) {
+      Alert.alert('Notification permission', 'Please enable notifications for OmniBins in your iPhone Settings.');
+      Linking.openSettings();
+    }
   };
 
   const requestLocationPermission = async () => {
     if (Platform.OS === 'android') {
       try {
-        const granted = await PermissionsAndroid.request(
+        const results = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        );
-        const finalValue = granted === PermissionsAndroid.RESULTS.GRANTED;
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+        ]);
+        const finalValue = [
+          results[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION],
+          results[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION],
+        ].includes(PermissionsAndroid.RESULTS.GRANTED);
         await persistPreference('allowLocation', finalValue);
         setAllowLocation(finalValue);
         if (!finalValue) {
@@ -192,10 +223,19 @@ const ProfilePage = ({ onLogout }) => {
       return;
     }
 
-    await persistPreference('allowLocation', true);
-    setAllowLocation(true);
-    Alert.alert('Location permission', 'Please enable location access for OmniBins in your iPhone Settings.');
-    Linking.openSettings();
+    try {
+      const status = await Geolocation.requestAuthorization('whenInUse');
+      const granted = status === 'granted';
+      await persistPreference('allowLocation', granted);
+      setAllowLocation(granted);
+      if (!granted) {
+        Alert.alert('Location unavailable', 'Allow location access for OmniBins in your iPhone Settings.');
+        if (status === 'denied' || status === 'restricted') Linking.openSettings();
+      }
+    } catch (e) {
+      console.warn('Location authorization request failed', e);
+      Alert.alert('Permission error', e?.message || 'Unable to request location permission');
+    }
   };
 
   const handleChangePassword = async () => {
@@ -224,114 +264,6 @@ const ProfilePage = ({ onLogout }) => {
       setChangingPassword(false);
     }
   };
-
-  // 2FA removed
-
-  const handleReauthAndRetryEmail = async (pendingEmail) => {
-    if (!auth.currentUser) return;
-    setReauthLoading(true);
-    try {
-      const cred = EmailAuthProvider.credential(auth.currentUser.email, reauthPassword);
-      await reauthenticateWithCredential(auth.currentUser, cred);
-      // retry updateEmail
-      try {
-        await updateEmail(auth.currentUser, pendingEmail);
-      } catch (e) {
-        const msg = e?.message || '';
-        const needsVerifyBeforeChange = /verify.*new email|please verify the new email/i.test(msg);
-        if (needsVerifyBeforeChange) {
-          Alert.alert(
-            'Verification Required',
-            'The backend requires the new email to be verified before changing it. This typically requires a server-side verify-before-change flow (Cloud Function). You can also try reauthenticating and retrying.',
-            [
-              { text: 'Reauthenticate', onPress: () => setReauthModalVisible(true) },
-              { text: 'OK', style: 'cancel' },
-            ],
-          );
-          setReauthModalVisible(false);
-          setReauthPassword('');
-          setReauthLoading(false);
-          return;
-        }
-        throw e;
-      }
-      // send verification to the new email
-      try { await sendEmailVerification(auth.currentUser); } catch (e) { console.warn('sendEmailVerification failed', e); }
-      // write pending change to DB; finalize after user verifies
-      await update(ref(db, `users/${userRecord.id}`), { pendingEmail: pendingEmail, emailVerified: false });
-      setPendingEmail(pendingEmail);
-      setVerificationPending(true);
-      // start auto-checking for verification
-      startVerificationWatcher();
-      setEditingField(null);
-      setEditValue('');
-      setReauthModalVisible(false);
-      setReauthPassword('');
-      Alert.alert('Verification Sent', 'A verification link was sent to the new address. Please verify to finalize the change.');
-    } catch (e) {
-      console.warn('Reauth/email retry failed', e);
-      Alert.alert('Error', e?.message || 'Reauthentication failed');
-    } finally {
-      setReauthLoading(false);
-    }
-  };
-
-  const checkEmailVerification = async () => {
-    if (!auth.currentUser) return;
-    try {
-      await reload(auth.currentUser);
-      const verified = !!auth.currentUser.emailVerified;
-      const currentEmail = auth.currentUser.email || '';
-      if (verified && currentEmail === pendingEmail) {
-        // move pendingEmail into official email field
-        await update(ref(db, `users/${userRecord.id}`), { email: pendingEmail, pendingEmail: null, emailVerified: true });
-        setUserRecord(prev => ({ ...(prev||{}), email: pendingEmail, pendingEmail: null, emailVerified: true }));
-        setVerificationPending(false);
-        setPendingEmail('');
-        Alert.alert('Saved', 'Email verified and updated');
-        // clear interval if running
-        if (verifyIntervalRef.current) { clearInterval(verifyIntervalRef.current); verifyIntervalRef.current = null; }
-        verifyAttemptsRef.current = 0;
-        return true;
-      } else {
-        Alert.alert('Not Verified', 'We could not verify the email yet. Make sure you clicked the link in the new email.');
-        return false;
-      }
-    } catch (e) {
-      console.warn('checkEmailVerification failed', e);
-      Alert.alert('Error', e?.message || 'Failed to check verification');
-      return false;
-    }
-  };
-
-  const startVerificationWatcher = () => {
-    // clear existing
-    if (verifyIntervalRef.current) {
-      clearInterval(verifyIntervalRef.current);
-      verifyIntervalRef.current = null;
-    }
-    verifyAttemptsRef.current = 0;
-    verifyIntervalRef.current = setInterval(async () => {
-      verifyAttemptsRef.current += 1;
-      const ok = await checkEmailVerification();
-      if (ok) {
-        // verified and cleared inside checkEmailVerification
-        return;
-      }
-      if (verifyAttemptsRef.current >= 12) { // ~1 minute
-        clearInterval(verifyIntervalRef.current);
-        verifyIntervalRef.current = null;
-        verifyAttemptsRef.current = 0;
-        Alert.alert('Still not verified', 'We did not detect verification yet. Please check your email and try the "I verified" button.');
-      }
-    }, 5000);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (verifyIntervalRef.current) { clearInterval(verifyIntervalRef.current); verifyIntervalRef.current = null; }
-    };
-  }, []);
 
   return (
     <View style={styles.container}>
@@ -377,29 +309,13 @@ const ProfilePage = ({ onLogout }) => {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.detailItem} onPress={() => {
-            setEditingField('email');
-            setEditValue(userRecord?.email || auth?.currentUser?.email || '');
-          }}>
+          <View style={styles.detailItem}>
             <View style={styles.detailTextContent}>
               <Text style={styles.detailLabel}>Email Address</Text>
-              <Text style={[styles.detailValue, styles.emailText]}>{auth?.currentUser?.email || userRecord?.email || '—'}</Text>
+              <Text style={styles.detailValue}>{auth?.currentUser?.email || userRecord?.email || '—'}</Text>
             </View>
-            <ChevronRightIcon />
-          </TouchableOpacity>
+          </View>
 
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.detailItem} onPress={() => {
-            setEditingField('employeeId');
-            setEditValue(userRecord?.employeeId || userRecord?.id || '');
-          }}>
-            <View style={styles.detailTextContent}>
-              <Text style={styles.detailLabel}>Employee ID</Text>
-              <Text style={styles.detailValue}>{userRecord?.employeeId || userRecord?.id || '—'}</Text>
-            </View>
-            <ChevronRightIcon />
-          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Security</Text>
@@ -439,7 +355,7 @@ const ProfilePage = ({ onLogout }) => {
           <View style={styles.toggleRow}>
             <View style={styles.detailTextContent}>
               <Text style={styles.detailLabel}>Allow Location</Text>
-              <Text style={styles.detailSubLabel}>Use your location for map features</Text>
+              <Text style={styles.detailSubLabel}>Use your location for local weather</Text>
             </View>
             <Switch
               value={allowLocation}
@@ -486,104 +402,30 @@ const ProfilePage = ({ onLogout }) => {
           </View>
         </Modal>
 
-        {/* Field edit modal */}
+        {/* Phone edit modal */}
         <Modal visible={!!editingField} transparent animationType="slide">
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
             <View style={{ width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Edit {editingField}</Text>
-              <TextInput value={editValue} onChangeText={setEditValue} autoCapitalize={editingField === 'email' ? 'none' : 'sentences'} style={{ borderWidth: 1, padding: 8, marginBottom: 10 }} />
-              {editingField === 'email' && (
-                <Text style={{ marginBottom: 10, color: '#333' }}>A verification link will be sent to the new address after you tap Verify.</Text>
-              )}
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Edit phone number</Text>
+              <TextInput value={editValue} onChangeText={setEditValue} keyboardType="phone-pad" style={{ borderWidth: 1, padding: 8, marginBottom: 10 }} />
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
                 <TouchableOpacity onPress={() => { setEditingField(null); setEditValue(''); }} style={{ padding: 10 }}>
                   <Text>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={async () => {
-                  // save field
                   if (!userRecord?.id) { Alert.alert('Error', 'No user record'); return; }
-                  const fieldKey = editingField === 'employeeId' ? 'employeeId' : editingField; // phone/email
                   try {
-                    if (editingField === 'email') {
-                      // update Firebase Auth email first
-                      try {
-                        await updateEmail(auth.currentUser, editValue);
-                      } catch (e) {
-                        const code = e?.code || '';
-                        const msg = e?.message || '';
-                        if (code === 'auth/requires-recent-login' || /recent/i.test(msg)) {
-                          // need reauthentication — open reauth modal
-                          setReauthModalVisible(true);
-                          return;
-                        }
-                        Alert.alert('Email update failed', msg || 'Could not update email');
-                        return;
-                      }
-
-                      // send verification to the new email and save as pending in DB
-                      try { await sendEmailVerification(auth.currentUser); } catch (e) { console.warn('sendEmailVerification failed', e); }
-                      await update(ref(db, `users/${userRecord.id}`), { pendingEmail: editValue, emailVerified: false });
-                      setPendingEmail(editValue);
-                      setVerificationPending(true);
-                      setEditingField(null);
-                      setEditValue('');
-                      Alert.alert('Verification Sent', 'A verification link was sent to the new address. Please verify to finalize the change.');
-                      return;
-                    }
-
-                    await update(ref(db, `users/${userRecord.id}`), { [fieldKey]: editValue });
-                    setUserRecord(prev => ({ ...(prev||{}), [fieldKey]: editValue }));
+                    await update(ref(db, `users/${userRecord.id}`), { phone: editValue });
+                    setUserRecord(prev => ({ ...(prev||{}), phone: editValue }));
                     setEditingField(null);
                     setEditValue('');
-                    Alert.alert('Saved', 'Field updated');
+                    Alert.alert('Saved', 'Phone number updated');
                   } catch (e) {
                     console.warn('Field save failed', e);
-                    Alert.alert('Error', e?.message || 'Failed to save field');
+                    Alert.alert('Error', e?.message || 'Failed to update phone number');
                   }
                 }} style={{ backgroundColor: '#00a63e', padding: 10, borderRadius: 8 }}>
-                  <Text style={{ color: '#fff' }}>{editingField === 'email' ? 'Verify' : 'Save'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Reauthentication modal used when email update requires recent login */}
-        <Modal visible={reauthModalVisible} transparent animationType="slide">
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <View style={{ width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Re-enter Password</Text>
-              <Text style={{ marginBottom: 8 }}>For security, please enter your current password to continue.</Text>
-              <TextInput placeholder="Current password" secureTextEntry value={reauthPassword} onChangeText={setReauthPassword} style={{ borderWidth: 1, padding: 8, marginBottom: 10 }} />
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-                <TouchableOpacity onPress={() => { setReauthModalVisible(false); setReauthPassword(''); }} style={{ padding: 10 }}>
-                  <Text>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={async () => {
-                  // call reauth and retry with pending editValue
-                  await handleReauthAndRetryEmail(editValue);
-                }} style={{ backgroundColor: '#00a63e', padding: 10, borderRadius: 8 }}>
-                  <Text style={{ color: '#fff' }}>{reauthLoading ? 'Please wait...' : 'Reauthenticate'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Verification pending modal */}
-        <Modal visible={verificationPending} transparent animationType="slide">
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <View style={{ width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Verify New Email</Text>
-              <Text style={{ marginBottom: 8 }}>A verification link was sent to:</Text>
-              <Text style={{ fontWeight: '600', marginBottom: 12 }}>{pendingEmail}</Text>
-              <Text style={{ marginBottom: 12 }}>Please open that email and click the verification link. Once done, tap the button below to finalize the change.</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-                <TouchableOpacity onPress={() => { setVerificationPending(false); setPendingEmail(''); }} style={{ padding: 10 }}>
-                  <Text>Dismiss</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={checkEmailVerification} style={{ backgroundColor: '#00a63e', padding: 10, borderRadius: 8 }}>
-                  <Text style={{ color: '#fff' }}>I verified — Check now</Text>
+                  <Text style={{ color: '#fff' }}>Save</Text>
                 </TouchableOpacity>
               </View>
             </View>

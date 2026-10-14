@@ -10,19 +10,52 @@ const LoginPage = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const getFriendlyLoginError = (message = '') => {
+    const msg = String(message || '').toLowerCase();
+
+    if (!msg) return 'Login failed. Please try again.';
+    if (msg.includes('invalid-email') || msg.includes('email is invalid')) return 'Please enter a valid email address.';
+    if (msg.includes('user-not-found') || msg.includes('no user records found')) return 'No account was found for this email.';
+    if (msg.includes('wrong-password') || msg.includes('password')) return 'Incorrect password. Please try again.';
+    if (msg.includes('account is pending approval')) return 'Your account is pending approval. Please contact an administrator.';
+    if (msg.includes('account not authorized') || msg.includes('only staff accounts')) return 'This account is not authorized for OmniBins staff access.';
+    if (msg.includes('too-many-requests')) return 'Too many attempts. Please wait a moment and try again.';
+    if (msg.includes('network')) return 'Network error. Please check your connection and try again.';
+    if (msg.includes('email not verified')) return 'Please verify your email before logging in.';
+    return 'Login failed. Please check your email and password.';
+  };
+
   const handlePress = async () => {
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      const message = !trimmedEmail && !trimmedPassword
+        ? 'Please enter your email and password.'
+        : !trimmedEmail
+          ? 'Please enter your email.'
+          : 'Please enter your password.';
+      setError(message);
+      Alert.alert('Missing information', message);
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
-      const result = await signInAndAuthorize(email.trim(), password);
+      const result = await signInAndAuthorize(trimmedEmail, password);
       if (result?.userId) {
-        await registerDeviceTokenForCurrentUser(result.userId);
+        try {
+          await registerDeviceTokenForCurrentUser(result.userId);
+        } catch (notificationError) {
+          console.warn('Notification token registration failed after login', notificationError);
+        }
       }
       setLoading(false);
       onLogin();
     } catch (e) {
       setLoading(false);
-      const msg = e?.message || 'Login failed';
+      const msg = getFriendlyLoginError(e?.message || 'Login failed');
       setError(msg);
       Alert.alert('Login error', msg);
     }
@@ -46,7 +79,10 @@ const LoginPage = ({ onLogin }) => {
         autoCapitalize="none"
         placeholderTextColor="#000000"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(text) => {
+          setEmail(text);
+          if (error) setError('');
+        }}
       />
       <TextInput
         style={styles.input}
@@ -54,10 +90,13 @@ const LoginPage = ({ onLogin }) => {
         secureTextEntry={true}
         placeholderTextColor="#000000"
         value={password}
-        onChangeText={setPassword}
+        onChangeText={(text) => {
+          setPassword(text);
+          if (error) setError('');
+        }}
       />
 
-      {error ? <Text style={{ color: 'red', marginBottom: 8 }}>{error}</Text> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <TouchableOpacity style={styles.loginButton} onPress={handlePress} disabled={loading}>
         {loading ? (
@@ -123,6 +162,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#191a1c',
     width: '100%',
+  },
+  errorText: {
+    width: '100%',
+    color: '#d93025',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
+    textAlign: 'left',
   },
   loginButton: {
     backgroundColor: PRIMARY_GREEN,

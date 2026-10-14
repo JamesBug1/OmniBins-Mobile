@@ -483,12 +483,20 @@ const SchedulePage = () => {
 
       const teamMembers = getTaskTeamMembers(task, teamsData);
       const completedEntries = updatePayload.completedBy || {};
-      const allCompleted = teamMembers.size > 0
+      const teamAssignmentFields = ['assignedToTeam', 'teamName', 'team', 'team_id', 'teamId', 'assignedTeam', 'groupName', 'group'];
+      const hasTeamAssignment = teamAssignmentFields.some((field) => !!task[field]);
+      const assigneeFields = ['assignedMembers', 'members', 'assignedUsers', 'teamMembers'];
+      const assignedPeople = new Set(assigneeFields
+        .flatMap((field) => getArrayValues(task[field]))
+        .map((member) => normalizeValue(typeof member === 'object' ? member.uid || member.id || member.employeeId || member.email || member.userId : member))
+        .filter(Boolean));
+      const isSharedTask = hasTeamAssignment || assignedPeople.size > 1;
+      const allCompleted = !isSharedTask || (teamMembers.size > 0
         ? Array.from(teamMembers).every((member) => {
             const matches = Object.keys(completedEntries).some((key) => normalizeValue(key) === member);
             return matches;
           })
-        : true;
+        : true);
 
       if (allCompleted) {
         updatePayload.status = 'completed';
@@ -498,7 +506,10 @@ const SchedulePage = () => {
 
       await update(taskRef, updatePayload);
       await syncCollectionStatus(task, updatePayload.status);
-      Alert.alert('Task updated', allCompleted ? 'All team members completed this task. Status is now completed.' : 'Your completion has been recorded. The task stays pending until the team finishes it.');
+      const completionMessage = allCompleted
+        ? (isSharedTask ? 'All team members completed this task. Status is now completed.' : 'Task marked as finished.')
+        : 'Your completion has been recorded. The task stays pending until the team finishes it.';
+      Alert.alert('Task updated', completionMessage);
     } catch (error) {
       console.warn('Failed to complete task', error?.message || error);
       Alert.alert('Task update failed', error?.message || 'Could not update the task.');
@@ -717,9 +728,11 @@ const SchedulePage = () => {
                   <Text style={styles.binTime}>{item.time}</Text>
                 </View>
                 <View style={styles.statusContainer}>
-                  <View style={[styles.statusBadge, item.status === 'Completed' && styles.doneBadge]}>
-                    <Text style={[styles.statusText, item.status === 'Completed' && styles.doneText]}>{item.status}</Text>
-                  </View>
+                  {item.status === 'Completed' && (
+                    <View style={[styles.statusBadge, styles.doneBadge]}>
+                      <Text style={[styles.statusText, styles.doneText]}>{item.status}</Text>
+                    </View>
+                  )}
                   {item.status !== 'Completed' && (
                     <TouchableOpacity style={styles.doneBtn} onPress={() => markTaskDone(item.taskKey)}>
                       <Text style={styles.doneBtnText}>Finish</Text>
