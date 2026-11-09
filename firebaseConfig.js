@@ -2,6 +2,8 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, get, update, onDisconnect, serverTimestamp } from 'firebase/database';
 import { getAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { PermissionsAndroid, Platform } from 'react-native';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 import {
   AuthorizationStatus,
   getMessaging,
@@ -27,6 +29,19 @@ export const db = getDatabase(app);
 export const auth = getAuth(app);
 
 let activePresenceUserId = null;
+
+export async function ensureTaskNotificationChannel() {
+  if (Platform.OS !== 'android') return null;
+
+  return notifee.createChannel({
+    id: 'task-updates-v2',
+    name: 'Task updates',
+    description: 'Alerts when a task is assigned to you',
+    importance: AndroidImportance.HIGH,
+    sound: 'default',
+    vibration: true,
+  });
+}
 
 export async function markUserOnline(userId) {
   if (!userId) return;
@@ -103,29 +118,45 @@ export async function signInAndAuthorize(email, password) {
   return { credential, userId, userRecord };
 }
 
+export async function getUserRecordIdForCurrentUser(userId = auth.currentUser?.uid) {
+  if (!userId) return null;
+
+  const directUserSnapshot = await get(ref(db, `users/${userId}`));
+  if (directUserSnapshot.exists()) return userId;
+
+  const currentUser = auth.currentUser;
+  const usersSnapshot = await get(ref(db, 'users'));
+  const users = usersSnapshot.val() || {};
+  const currentEmail = (currentUser?.email || '').toLowerCase();
+  const matchingUser = Object.entries(users).find(([id, record]) => (
+    id === userId
+    || record?.uid === userId
+    || (currentEmail && (record?.email || '').toLowerCase() === currentEmail)
+  ));
+
+  return matchingUser?.[0] || null;
+}
+
 export async function registerDeviceTokenForCurrentUser(userId) {
   if (!userId) return null;
 
   try {
-    const directUserSnapshot = await get(ref(db, `users/${userId}`));
-    let userRecordId = directUserSnapshot.exists() ? userId : null;
-
-    if (!userRecordId) {
-      const currentUser = auth.currentUser;
-      const usersSnapshot = await get(ref(db, 'users'));
-      const users = usersSnapshot.val() || {};
-      const currentEmail = (currentUser?.email || '').toLowerCase();
-      const matchingUser = Object.entries(users).find(([id, record]) => (
-        id === userId
-        || record?.uid === userId
-        || (currentEmail && (record?.email || '').toLowerCase() === currentEmail)
-      ));
-
-      userRecordId = matchingUser?.[0] || null;
-    }
+    const userRecordId = await getUserRecordIdForCurrentUser(userId);
 
     if (!userRecordId) {
       throw new Error('Could not find the signed-in user record in the database.');
+    }
+
+    await ensureTaskNotificationChannel();
+
+    if (Platform.OS === 'android' && Number(Platform.Version) >= 33) {
+      const permission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
+        await update(ref(db, `users/${userRecordId}`), { allowNotifications: false, fcmToken: null });
+        return null;
+      }
     }
 
     const messagingInstance = getMessaging();
@@ -142,7 +173,7 @@ export async function registerDeviceTokenForCurrentUser(userId) {
       || authStatus === AuthorizationStatus.PROVISIONAL;
 
     if (!enabled) {
-      await update(ref(db, `users/${userRecordId}`), { allowNotifications: false });
+      await update(ref(db, `users/${userRecordId}`), { allowNotifications: false, fcmToken: null });
       return null;
     }
 
@@ -162,6 +193,18 @@ export async function registerDeviceTokenForCurrentUser(userId) {
     console.warn('Device token registration failed', e);
     throw e;
   }
+}
+
+export async function unregisterDeviceTokenForCurrentUser(userId) {
+  const userRecordId = await getUserRecordIdForCurrentUser(userId);
+  if (!userRecordId) return false;
+
+  await update(ref(db, `users/${userRecordId}`), {
+    allowNotifications: false,
+    fcmToken: null,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 export async function signOutUser() {

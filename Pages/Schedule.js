@@ -12,6 +12,8 @@ import {
   Alert,
 } from 'react-native';
 import { CalendarIcon, SimpleBinIcon } from '../Components/Icons';
+import { getTaskLocation } from '../Components/taskLocation';
+import { getTaskSafetyIssues } from '../Components/taskSafety';
 import { auth, db } from '../firebaseConfig';
 import { ref, onValue, update, get } from 'firebase/database';
 
@@ -58,7 +60,7 @@ const syncCollectionStatus = async (task, nextStatus) => {
   const taskId = task.id || task.taskId || task.taskKey;
   const binId = task.binId || task.bin || task.bin_id || task.binID || task.locationId;
   const scheduleDate = task.date || task.scheduledDate || task.scheduleDate || task.taskDate || task.dateTime || task.timestamp || task.createdAt;
-  const teamName = task.assignedToTeam || task.teamName || task.team || task.team_id || task.teamId || task.assignedTeam || task.groupName || task.group;
+  const taskType = normalizeValue(task.type || task.taskType || task.category);
 
   const collectionsSnap = await get(ref(db, 'collections'));
   const collections = collectionsSnap.val() || {};
@@ -68,16 +70,24 @@ const syncCollectionStatus = async (task, nextStatus) => {
     if (!collection || typeof collection !== 'object') return;
 
     const collectionTaskId = collection.taskId || collection.task_id || collection.task || collection.parentTaskId || collection.taskRef;
-    const collectionBinId = collection.binId || collection.bin || collection.bin_id || collection.binID || collection.locationId;
     const collectionDate = collection.date || collection.scheduledDate || collection.scheduleDate || collection.taskDate || collection.dateTime || collection.timestamp || collection.createdAt;
-    const collectionTeam = collection.assignedToTeam || collection.teamName || collection.team || collection.team_id || collection.teamId || collection.assignedTeam || collection.groupName || collection.group;
+    const matchesByTask = !!taskId && (
+      normalizeValue(collectionId) === normalizeValue(taskId)
+      || (!!collectionTaskId && normalizeValue(taskId) === normalizeValue(collectionTaskId))
+    );
+    const collectionBinId = collection.binId || collection.bin || collection.bin_id || collection.binID || collection.locationId;
+    const collectionType = normalizeValue(collection.type || collection.taskType || collection.category);
+    const matchesLegacyOccurrence = !collectionTaskId
+      && !collection.taskId
+      && !!binId
+      && !!collectionBinId
+      && normalizeValue(binId) === normalizeValue(collectionBinId)
+      && !!scheduleDate
+      && !!collectionDate
+      && normalizeValue(String(scheduleDate).slice(0, 10)) === normalizeValue(String(collectionDate).slice(0, 10))
+      && (!taskType || !collectionType || taskType === collectionType);
 
-    const matchesByTask = !!taskId && !!collectionTaskId && normalizeValue(taskId) === normalizeValue(collectionTaskId);
-    const matchesByBin = !!binId && !!collectionBinId && normalizeValue(binId) === normalizeValue(collectionBinId);
-    const matchesByDate = !!scheduleDate && !!collectionDate && normalizeValue(String(scheduleDate)) === normalizeValue(String(collectionDate));
-    const matchesByTeam = !!teamName && !!collectionTeam && normalizeValue(teamName) === normalizeValue(collectionTeam);
-
-    if (!matchesByTask && !matchesByBin && !matchesByDate && !matchesByTeam) {
+    if (!matchesByTask && !matchesLegacyOccurrence) {
       return;
     }
 
@@ -99,6 +109,13 @@ const syncCollectionStatus = async (task, nextStatus) => {
 const normalizeValue = (value) => {
   if (value === undefined || value === null) return '';
   return String(value).trim().toLowerCase();
+};
+
+const isMaintenanceTask = (task) => {
+  const taskType = normalizeValue(
+    task?.type || task?.taskType || task?.category || task?.taskCategory || task?.task_type || task?.serviceType,
+  ).replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  return taskType === 'maintenance' || taskType === 'maintenance task';
 };
 
 const getArrayValues = (value) => {
@@ -375,6 +392,7 @@ const SchedulePage = () => {
   const [tasks, setTasks] = useState([]);
   const [currentUserRecord, setCurrentUserRecord] = useState(null);
   const [teamsData, setTeamsData] = useState({});
+  const [sensorRecords, setSensorRecords] = useState([]);
   const [allUsers, setAllUsers] = useState({});
 
   useEffect(() => {
@@ -433,6 +451,7 @@ const SchedulePage = () => {
       const list = raw && typeof raw === 'object'
         ? Object.entries(raw)
             .map(([id, value]) => ({ id, ...value }))
+            .filter((task) => task.isCapacityTriggered || (!task.recurrence && !task.isRecurringOccurrence))
             .filter((task) => matchesCurrentUserTask(task, currentUserRecord, teamsData))
         : [];
       setTasks(list);
@@ -444,6 +463,22 @@ const SchedulePage = () => {
     return () => unsubscribe && unsubscribe();
   }, [currentUserRecord, teamsData]);
 
+  useEffect(() => {
+    const sensorPaths = ['sensor_data1', 'sensor_data2'];
+    const recordsByPath = new Map();
+    const unsubscribers = sensorPaths.map(sensorPath => onValue(
+      ref(db, sensorPath),
+      snapshot => {
+        const values = snapshot.val() || {};
+        recordsByPath.set(sensorPath, Object.entries(values).map(([id, record]) => ({ id, ...(record || {}) })));
+        setSensorRecords(Array.from(recordsByPath.values()).flat());
+      },
+      error => console.warn(`Could not load ${sensorPath} locations`, error?.message || error),
+    ));
+
+    return () => unsubscribers.forEach(unsubscribeSensorPath => unsubscribeSensorPath());
+  }, []);
+
   const scheduleData = tasks
     .filter((task) => {
       const taskDate = getTaskDateValue(task);
@@ -453,9 +488,10 @@ const SchedulePage = () => {
     })
     .map((task) => ({
       id: task.binId || task.bin || task.taskId || task.id || 'BIN',
-      location: task.location || task.address || task.site || 'Unassigned location',
+      location: getTaskLocation(task, sensorRecords) || task.binId || task.bin || 'Unassigned location',
       time: formatTaskTime(task),
       status: getTaskStatus(task, currentUserRecord, teamsData),
+      safetyIssues: isMaintenanceTask(task) ? [] : getTaskSafetyIssues(task, sensorRecords),
       taskKey: task.id,
       rawTask: task,
     }));
@@ -471,6 +507,29 @@ const SchedulePage = () => {
         return;
       }
 
+      const binId = task.binId || task.bin || task.bin_id || task.binID || task.node || task.locationId;
+      if (binId && !isMaintenanceTask(task)) {
+        const binSnapshot = await get(ref(db, `bins/${binId}`));
+        const binConfig = binSnapshot.val() || {};
+        const configuredSensorPath = binConfig.sensorDataPath || binConfig.sensorDataName;
+        const sensorPathMatch = String(configuredSensorPath || '').match(/^sensor_data\d+$/i);
+        const binNumberMatch = String(binId).match(/^BIN[-_ ]?(\d+)$/i);
+        const sensorPath = sensorPathMatch?.[0] || (binNumberMatch ? `sensor_data${binNumberMatch[1]}` : null);
+
+        if (!sensorPath) {
+          Alert.alert('Cannot finish task', 'The bin sensor feed could not be identified, so its safety status cannot be checked.');
+          return;
+        }
+
+        const sensorSnapshot = await get(ref(db, sensorPath));
+        const latestRecords = Object.entries(sensorSnapshot.val() || {}).map(([id, record]) => ({ id, ...(record || {}) }));
+        const safetyIssues = getTaskSafetyIssues(task, latestRecords, binConfig);
+        if (safetyIssues.length) {
+          Alert.alert('Cannot finish task yet', safetyIssues.join('\n'));
+          return;
+        }
+      }
+
       const currentUser = auth?.currentUser;
       const userKey = normalizeValue(currentUser?.uid || currentUserRecord?.uid || currentUserRecord?.id || currentUserRecord?.employeeId || currentUser?.email || currentUserRecord?.email);
       const updatePayload = {
@@ -478,38 +537,13 @@ const SchedulePage = () => {
           ...(task.completedBy || task.completions || task.teamCompletion || task.completedMembers || {}),
           [currentUser?.uid || currentUserRecord?.uid || currentUserRecord?.id || currentUserRecord?.employeeId || currentUser?.email || currentUserRecord?.email]: true,
         },
+        status: 'completed',
         completedAt: new Date().toISOString(),
       };
 
-      const teamMembers = getTaskTeamMembers(task, teamsData);
-      const completedEntries = updatePayload.completedBy || {};
-      const teamAssignmentFields = ['assignedToTeam', 'teamName', 'team', 'team_id', 'teamId', 'assignedTeam', 'groupName', 'group'];
-      const hasTeamAssignment = teamAssignmentFields.some((field) => !!task[field]);
-      const assigneeFields = ['assignedMembers', 'members', 'assignedUsers', 'teamMembers'];
-      const assignedPeople = new Set(assigneeFields
-        .flatMap((field) => getArrayValues(task[field]))
-        .map((member) => normalizeValue(typeof member === 'object' ? member.uid || member.id || member.employeeId || member.email || member.userId : member))
-        .filter(Boolean));
-      const isSharedTask = hasTeamAssignment || assignedPeople.size > 1;
-      const allCompleted = !isSharedTask || (teamMembers.size > 0
-        ? Array.from(teamMembers).every((member) => {
-            const matches = Object.keys(completedEntries).some((key) => normalizeValue(key) === member);
-            return matches;
-          })
-        : true);
-
-      if (allCompleted) {
-        updatePayload.status = 'completed';
-      } else {
-        updatePayload.status = 'pending';
-      }
-
       await update(taskRef, updatePayload);
       await syncCollectionStatus(task, updatePayload.status);
-      const completionMessage = allCompleted
-        ? (isSharedTask ? 'All team members completed this task. Status is now completed.' : 'Task marked as finished.')
-        : 'Your completion has been recorded. The task stays pending until the team finishes it.';
-      Alert.alert('Task updated', completionMessage);
+      Alert.alert('Task finished', 'This task is marked completed for the team.');
     } catch (error) {
       console.warn('Failed to complete task', error?.message || error);
       Alert.alert('Task update failed', error?.message || 'Could not update the task.');
@@ -734,9 +768,20 @@ const SchedulePage = () => {
                     </View>
                   )}
                   {item.status !== 'Completed' && (
-                    <TouchableOpacity style={styles.doneBtn} onPress={() => markTaskDone(item.taskKey)}>
-                      <Text style={styles.doneBtnText}>Finish</Text>
-                    </TouchableOpacity>
+                    <>
+                      <TouchableOpacity
+                        style={[styles.doneBtn, item.safetyIssues.length > 0 && styles.blockedBtn]}
+                        onPress={() => markTaskDone(item.taskKey)}
+                        disabled={item.safetyIssues.length > 0}
+                        accessibilityRole="button"
+                        accessibilityLabel={item.safetyIssues.length ? `Finish blocked: ${item.safetyIssues[0]}` : 'Finish task'}
+                      >
+                        <Text style={styles.doneBtnText}>{item.safetyIssues.length > 0 ? 'Blocked' : 'Finish'}</Text>
+                      </TouchableOpacity>
+                      {item.safetyIssues.length > 0 && (
+                        <Text style={styles.blockedHint} numberOfLines={2}>Resolve bin alert first</Text>
+                      )}
+                    </>
                   )}
                 </View>
               </View>
@@ -861,10 +906,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  blockedBtn: {
+    backgroundColor: '#9ca3af',
+  },
   doneBtnText: {
     color: '#ffffff',
     fontSize: 11,
     fontWeight: 'bold',
+  },
+  blockedHint: {
+    color: '#b91c1c',
+    fontSize: 9,
+    textAlign: 'right',
+    marginTop: 3,
   },
   emptyState: {
     paddingVertical: 28,

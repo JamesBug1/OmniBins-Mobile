@@ -44,7 +44,7 @@ const LoginPage = ({ onLogin }) => {
     setLoading(true);
     try {
       const result = await signInAndAuthorize(trimmedEmail, password);
-      if (result?.userId) {
+      if (result?.userId && result.userRecord?.allowNotifications === true) {
         try {
           await registerDeviceTokenForCurrentUser(result.userId);
         } catch (notificationError) {

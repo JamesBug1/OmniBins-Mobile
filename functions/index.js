@@ -1,5 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 admin.initializeApp();
 
@@ -31,6 +32,11 @@ const getUserIdentities = (id, user) => [
 ].map(normalize).filter(Boolean);
 
 const assignmentKey = (task) => JSON.stringify(getAssignments(task));
+const getTaskType = (task) => {
+  const value = task.type || task.taskType || task.category || task.taskCategory || task.task_type || task.serviceType;
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().replace(/[_-]+/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
+};
 
 // Trigger on create or update of a task. Sends notifications to team members.
 exports.notifyTeamOnTaskAssign = functions.database
@@ -48,30 +54,53 @@ exports.notifyTeamOnTaskAssign = functions.database
 
     const usersSnap = await admin.database().ref('/users').once('value');
     const users = usersSnap.val() || {};
+    const taskType = getTaskType(after);
+    const title = taskType ? `${taskType} task assigned` : 'New task assigned';
+    const taskTitle = after.title || after.name || after.binId || after.bin || null;
+    const taskDetails = after.description || after.body;
+    const body = taskDetails
+      ? (taskTitle ? `${taskTitle}: ${taskDetails}` : taskDetails)
+      : (taskTitle || 'A new task has been assigned to you.');
+    const notificationId = `task_${crypto.createHash('sha256').update(`${taskId}:${assignmentKey(after)}`).digest('hex').slice(0, 32)}`;
+    const notification = {
+      type: 'task_assigned',
+      taskType: taskType || null,
+      taskId: String(taskId),
+      title,
+      body,
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      read: false,
+    };
+    const inboxWrites = [];
     const tokens = [...new Set(Object.entries(users).flatMap(([id, user]) => {
-      if (!user || typeof user !== 'object' || !user.fcmToken) return [];
+      if (!user || typeof user !== 'object') return [];
       const matchesTeam = getUserTeams(user).some((team) => assignments.teams.includes(team));
       const matchesUser = getUserIdentities(id, user).some((identity) => assignments.users.includes(identity));
-      return matchesTeam || matchesUser ? [user.fcmToken] : [];
+      if (!matchesTeam && !matchesUser) return [];
+
+      inboxWrites.push(admin.database().ref(`/users/${id}/notifications/${notificationId}`).transaction(current => current || notification));
+      return user.allowNotifications === true && user.fcmToken ? [user.fcmToken] : [];
     }))];
 
+    await Promise.all(inboxWrites);
+
     if (!tokens.length) {
-      console.log('No FCM tokens matched task assignment', taskId, assignments);
+      console.log('Saved inbox notices; no opted-in FCM tokens matched task assignment', taskId, assignments);
       return null;
     }
 
-    const assignedTeam = assignments.teams[0];
-    const notificationTitle = after.title || after.name || (assignedTeam ? `Task assigned to ${assignedTeam}` : 'Task assigned to you');
-    const notificationBody = after.description || after.body || `Tap to view task ${taskId}`;
-
     const message = {
       notification: {
-        title: notificationTitle,
-        body: notificationBody,
+        title,
+        body,
       },
       data: {
         taskId: taskId,
         type: 'task_assigned',
+      },
+      android: {
+        priority: 'high',
+        notification: { channelId: 'task-updates-v2' },
       },
     };
 

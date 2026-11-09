@@ -4,9 +4,9 @@ Firebase remains responsible for sign-in and Realtime Database. Report photos ar
 
 ## Configure the app
 
-1. Create a Supabase project and copy its Project URL and `anon` (publishable) key from the API settings.
-2. Put those values in `supabaseConfig.js` as `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-3. Never put the `service_role` key in the mobile app.
+1. Copy the Project URL from your Supabase project's API settings and set `SUPABASE_URL` in `supabaseConfig.js`.
+2. The supplied publishable key is set as `SUPABASE_ANON_KEY` in `supabaseConfig.js`. Publishable keys are intended for client apps.
+3. Never put a Supabase secret key (`sb_secret_...`) or legacy `service_role` key in the mobile app. Secret keys are server-only and must be stored in server environment secrets.
 
 ## Create the bucket and policy
 

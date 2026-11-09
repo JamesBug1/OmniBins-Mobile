@@ -29,11 +29,45 @@ const parseCoordinateValue = (value) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+const findCoordinatePair = (value) => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length >= 2) {
+      const latitude = parseCoordinateValue(value[0]);
+      const longitude = parseCoordinateValue(value[1]);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        return { latitude, longitude };
+      }
+    }
+    return value.map(findCoordinatePair).find(Boolean) || null;
+  }
+
+  const fields = Object.entries(value);
+  const latitudeField = fields.find(([key]) => ['lat', 'latitude'].includes(key.toLowerCase()));
+  const longitudeField = fields.find(([key]) => ['lng', 'lon', 'longitude'].includes(key.toLowerCase()));
+  if (latitudeField && longitudeField) {
+    const latitude = parseCoordinateValue(latitudeField[1]);
+    const longitude = parseCoordinateValue(longitudeField[1]);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return { latitude, longitude };
+    }
+  }
+
+  return fields.map(([, child]) => findCoordinatePair(child)).find(Boolean) || null;
+};
+
 const normalizeBinRecord = (item = {}) => {
-  const rawStatus = String(item?.status || item?.state || item?.condition || 'Normal');
+  const sensorData = item?.sensorData || item?.sensor || item?.readings || item?.data || {};
+  const rawStatus = String(
+    item?.status || item?.state || item?.condition || sensorData?.status || sensorData?.state || 'Normal',
+  );
   const normalizedStatus = rawStatus.trim().toLowerCase();
   const capacity = Number(
-    item?.capacity ?? item?.fillLevel ?? item?.fillPercentage ?? item?.percentage ?? item?.fill ?? 0,
+    item?.capacity ?? item?.fillLevel ?? item?.fillPercentage ?? item?.percentage ?? item?.fill ??
+    sensorData?.capacity ?? sensorData?.fillLevel ?? sensorData?.fillPercentage ?? sensorData?.percentage ?? sensorData?.fill ?? 0,
   );
 
   const status =
@@ -49,16 +83,23 @@ const normalizeBinRecord = (item = {}) => {
     ? item.coordinates
     : Array.isArray(item?.location)
       ? item.location
-      : item?.coordinates || item?.location || item?.position || item?.geo || {};
+      : item?.coordinates || item?.location || item?.position || item?.geo ||
+        sensorData?.coordinates || sensorData?.location || sensorData?.position || sensorData?.geo || {};
 
   let latitude = parseCoordinateValue(
-    item?.lat ?? item?.latitude ?? item?.y ??
+    item?.lat ?? item?.latitude ?? item?.y ?? sensorData?.lat ?? sensorData?.latitude ?? sensorData?.y ??
     (Array.isArray(coordinateSource) ? coordinateSource[0] : coordinateSource?.lat ?? coordinateSource?.latitude ?? null),
   );
   let longitude = parseCoordinateValue(
-    item?.lng ?? item?.longitude ?? item?.x ??
+    item?.lng ?? item?.longitude ?? item?.x ?? sensorData?.lng ?? sensorData?.lon ?? sensorData?.longitude ?? sensorData?.x ??
     (Array.isArray(coordinateSource) ? coordinateSource[1] : coordinateSource?.lng ?? coordinateSource?.lon ?? coordinateSource?.longitude ?? null),
   );
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    const nestedCoordinates = findCoordinatePair(item);
+    latitude = Number.isFinite(latitude) ? latitude : nestedCoordinates?.latitude ?? null;
+    longitude = Number.isFinite(longitude) ? longitude : nestedCoordinates?.longitude ?? null;
+  }
 
   if (!Number.isFinite(latitude) && typeof item?.geo === 'object') {
     latitude = parseCoordinateValue(item.geo.lat ?? item.geo.latitude ?? null);
@@ -81,7 +122,10 @@ const normalizeBinRecord = (item = {}) => {
     item?.name,
     item?.binName,
     item?.bin_name,
+    sensorData?.address,
+    sensorData?.locationName,
     typeof item?.location === 'string' ? item.location : null,
+    typeof sensorData?.location === 'string' ? sensorData.location : null,
     item?.coordinates?.address,
     item?.geo?.address,
   ];
@@ -89,13 +133,13 @@ const normalizeBinRecord = (item = {}) => {
   const resolvedAddress = addressCandidates.find((value) => typeof value === 'string' && value.trim()) || 'Unknown location';
 
   return {
-    id: String(item?.node ?? item?.id ?? item?.binId ?? item?.bin_id ?? item?.binID ?? item?.binCode ?? item?.name ?? 'BIN-00'),
+    id: String(item?.key ?? item?.id ?? item?.binId ?? item?.bin_id ?? item?.binID ?? item?.binCode ?? item?.node ?? item?.name ?? 'BIN-00'),
     latitude: Number.isFinite(latitude) ? latitude : null,
     longitude: Number.isFinite(longitude) ? longitude : null,
     address: resolvedAddress,
     status,
     capacity: Number.isFinite(capacity) ? capacity : 0,
-    lastCollection: item?.lastCollection ?? item?.updatedAt ?? item?.lastUpdated ?? 'Recently',
+    lastCollection: item?.lastCollection ?? item?.updatedAt ?? item?.lastUpdated ?? sensorData?.updatedAt ?? 'Recently',
   };
 };
 
@@ -112,16 +156,26 @@ const buildMapHtml = (items) => {
       const safeAddress = JSON.stringify(String(bin.address || 'Unknown location'));
       const safeStatus = JSON.stringify(String(bin.status || 'Normal'));
       const safeId = JSON.stringify(String(bin.id || `bin-${index}`));
+      const safeLabel = JSON.stringify(
+        String(bin.id || `bin-${index}`).replace(/[&<>"']/g, (character) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[character]),
+      );
       const safeCapacity = Number(bin.capacity) || 0;
       return `
         const marker${key} = L.marker([${bin.latitude}, ${bin.longitude}], {
           icon: L.divIcon({
             className: 'custom-div-icon',
-            html: '<div style="position:relative;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${getStatusColor(bin.status)};box-shadow:0 8px 18px rgba(15,23,42,0.24);border:3px solid rgba(255,255,255,0.9);"><div style="width:10px;height:10px;border-radius:50%;background:#ffffff;transform:rotate(45deg);"></div></div>',
-            iconSize: [26, 26],
-            iconAnchor: [13, 26],
+            html: '<div style="position:relative;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${getStatusColor(bin.status)};box-shadow:0 4px 10px rgba(15,23,42,0.4);border:3px solid #ffffff;"><div style="width:12px;height:12px;border-radius:50%;background:#ffffff;transform:rotate(45deg);"></div></div>',
+            iconSize: [36, 36],
+            iconAnchor: [18, 34],
           }),
         }).addTo(map);
+        marker${key}.bindTooltip(${safeLabel}, { permanent: true, direction: 'top', offset: [0, -29], className: 'bin-marker-label', opacity: 1 });
         marker${key}.bindPopup('<div class="custom-popup"><div class="popup-badge" style="background:${getStatusColor(bin.status)};">' + ${safeStatus} + '</div><div class="popup-title">' + ${safeId} + '</div><div class="popup-text">' + ${safeAddress} + '</div><div class="popup-meta"><span>Capacity</span><strong>' + ${safeCapacity} + '%</strong></div></div>', { className: 'custom-popup-wrapper' });
         marker${key}.on('click', function () {
           window.ReactNativeWebView.postMessage(JSON.stringify({ id: ${safeId} }));
@@ -142,6 +196,17 @@ const buildMapHtml = (items) => {
           html, body, #map { margin: 0; width: 100%; height: 100%; background: #e5e7eb; }
           body { font-family: sans-serif; }
           .leaflet-container { background: #e5e7eb; }
+          .custom-div-icon { background: transparent; border: 0; }
+          .bin-marker-label {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.3);
+            color: #111827;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 6px;
+          }
           .leaflet-control-zoom {
             border: none !important;
             border-radius: 14px !important;
@@ -239,25 +304,120 @@ const buildMapHtml = (items) => {
 
 export default function MapPage() {
   const [bins, setBins] = useState([]);
+  const [binRecords, setBinRecords] = useState([]);
+  const [latestSensorRecords, setLatestSensorRecords] = useState([]);
+  const [binRecordCount, setBinRecordCount] = useState(0);
+  const [databaseError, setDatabaseError] = useState('');
   const [selectedBinId, setSelectedBinId] = useState(null);
 
   useEffect(() => {
     const binsRef = ref(db, 'bins');
-    const unsubscribe = onValue(binsRef, (snapshot) => {
+    const handleReadError = (error) => {
+      console.warn('Failed to read Firebase bin locations', error?.message || error);
+      setDatabaseError(error?.message || 'Unable to read bin locations from Firebase.');
+    };
+
+    const unsubscribeBins = onValue(binsRef, (snapshot) => {
       const data = snapshot.val();
       const rawList = data ? Object.entries(data).map(([key, value]) => ({ key, ...((value || {})) })) : [];
-      const list = rawList
-        .map((entry) => normalizeBinRecord({ ...entry, id: entry.id || entry.key }))
-        .filter((bin) => Number.isFinite(bin.latitude) && Number.isFinite(bin.longitude));
+      setBinRecords(rawList);
+      setBinRecordCount(rawList.length);
+      setDatabaseError('');
+    }, handleReadError);
 
-      setBins(list);
-      if (!selectedBinId && list.length) {
-        setSelectedBinId(list[0].id);
-      }
+    return unsubscribeBins;
+  }, []);
+
+  useEffect(() => {
+    const sensorPaths = new Set();
+    binRecords.forEach((record) => {
+      [record.sensorDataName, record.sensorDataPath, record.id, record.key].forEach((value) => {
+        const name = String(value || '').trim();
+        const pathMatch = name.match(/^(sensor_data\d+)$/i);
+        const binMatch = name.match(/^BIN[-_ ]?(\d+)$/i);
+        if (pathMatch) sensorPaths.add(pathMatch[1]);
+        else if (binMatch) sensorPaths.add(`sensor_data${binMatch[1]}`);
+      });
+    });
+    if (!sensorPaths.size) sensorPaths.add('sensor_data1');
+
+    const recordsByPath = new Map();
+    const unsubscribeSensorPaths = Array.from(sensorPaths, (sensorPath) => onValue(
+      ref(db, sensorPath),
+      (snapshot) => {
+        const data = snapshot.val();
+        const latestByBin = new Map();
+
+        Object.entries(data || {}).forEach(([recordId, record = {}]) => {
+          const binId = String(record.node ?? record.binId ?? record.bin_id ?? record.binID ?? record.id ?? '').trim();
+          if (!binId) return;
+
+          const previous = latestByBin.get(binId);
+          const recordTime = Date.parse(record.timestamp ?? record.updatedAt ?? record.createdAt ?? '');
+          const previousTime = previous
+            ? Date.parse(previous.timestamp ?? previous.updatedAt ?? previous.createdAt ?? '')
+            : Number.NEGATIVE_INFINITY;
+          if (!previous || !Number.isFinite(recordTime) || !Number.isFinite(previousTime) || recordTime >= previousTime) {
+            latestByBin.set(binId, { ...record, id: recordId, node: binId });
+          }
+        });
+
+        recordsByPath.set(sensorPath, latestByBin);
+        const combinedLatest = new Map();
+        recordsByPath.forEach((pathRecords) => {
+          pathRecords.forEach((record, binId) => {
+            const previous = combinedLatest.get(binId);
+            const recordTime = Date.parse(record.timestamp ?? record.updatedAt ?? record.createdAt ?? '');
+            const previousTime = previous
+              ? Date.parse(previous.timestamp ?? previous.updatedAt ?? previous.createdAt ?? '')
+              : Number.NEGATIVE_INFINITY;
+            if (!previous || !Number.isFinite(recordTime) || !Number.isFinite(previousTime) || recordTime >= previousTime) {
+              combinedLatest.set(binId, record);
+            }
+          });
+        });
+
+        setLatestSensorRecords(Array.from(combinedLatest.values()));
+        setDatabaseError('');
+      },
+      (error) => {
+        console.warn(`Failed to read Firebase ${sensorPath}`, error?.message || error);
+        setDatabaseError(error?.message || `Unable to read ${sensorPath} from Firebase.`);
+      },
+    ));
+
+    return () => unsubscribeSensorPaths.forEach((unsubscribe) => unsubscribe());
+  }, [binRecords]);
+
+  useEffect(() => {
+    const recordsById = new Map(
+      binRecords.map((record) => [
+        String(record.id ?? record.key).trim().toLowerCase(),
+        { ...record, id: record.id || record.key },
+      ]),
+    );
+    const combinedRecords = new Map(recordsById);
+
+    latestSensorRecords.forEach((sensorRecord) => {
+      const id = String(sensorRecord.node).trim().toLowerCase();
+      combinedRecords.set(id, {
+        ...(combinedRecords.get(id) || {}),
+        ...sensorRecord,
+        id: sensorRecord.node,
+        key: sensorRecord.node,
+      });
     });
 
-    return () => unsubscribe();
-  }, [selectedBinId]);
+    const list = Array.from(combinedRecords.values())
+      .map((record) => normalizeBinRecord(record))
+      .filter((bin) => Number.isFinite(bin.latitude) && Number.isFinite(bin.longitude));
+
+    setBins(list);
+    setBinRecordCount(combinedRecords.size);
+    setSelectedBinId((currentId) =>
+      list.some((bin) => bin.id === currentId) ? currentId : list[0]?.id || null,
+    );
+  }, [binRecords, latestSensorRecords]);
 
   const selectedBin = useMemo(
     () => bins.find((bin) => bin.id === selectedBinId) || bins[0] || null,
@@ -298,8 +458,16 @@ export default function MapPage() {
 
       {!bins.length && (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No bins found</Text>
-          <Text style={styles.emptyText}>Live Firebase bin data is not available yet.</Text>
+          <Text style={styles.emptyTitle}>
+            {databaseError ? 'Could not load bins' : binRecordCount ? 'Bin coordinates missing' : 'No bins found'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {databaseError
+              ? databaseError
+              : binRecordCount
+                ? `${binRecordCount} record${binRecordCount === 1 ? '' : 's'} found at /bins, but none have valid latitude and longitude values.`
+                : 'No records were found at /bins in Firebase.'}
+          </Text>
         </View>
       )}
 
@@ -314,6 +482,9 @@ export default function MapPage() {
 
           <ScrollView style={styles.detailsContent} showsVerticalScrollIndicator={false}>
             <Text style={styles.detailLabel}>{selectedBin.address}</Text>
+            <Text style={styles.detailCoordinates}>
+              {selectedBin.latitude.toFixed(6)}, {selectedBin.longitude.toFixed(6)}
+            </Text>
             <View style={styles.capacityRow}>
               <Text style={styles.detailHeading}>Capacity</Text>
               <Text style={styles.capacityValue}>{selectedBin.capacity}%</Text>
@@ -417,6 +588,13 @@ const styles = StyleSheet.create({
     color: '#4b5563',
     fontSize: 14,
     marginBottom: 10,
+  },
+  detailCoordinates: {
+    color: '#6b7280',
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 8,
+    fontVariant: ['tabular-nums'],
   },
   detailHeading: {
     fontWeight: '700',

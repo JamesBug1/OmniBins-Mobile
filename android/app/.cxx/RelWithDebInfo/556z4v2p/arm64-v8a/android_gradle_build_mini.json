@@ -2,6 +2,7 @@
   "buildFiles": [
     "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/app/android/src/reactnative/java/io/invertase/firebase/app/generated/jni/CMakeLists.txt",
     "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/@react-native-firebase/messaging/android/src/main/java/io/invertase/firebase/messaging/generated/jni/CMakeLists.txt",
+    "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-blob-util/android/build/generated/source/codegen/jni/CMakeLists.txt",
     "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-image-picker/android/build/generated/source/codegen/jni/CMakeLists.txt",
     "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-maps/android/src/main/jni/CMakeLists.txt",
     "/home/james/Downloads/Densyuu/OmniBins_Mobile/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt",
@@ -71,6 +72,11 @@
         "/home/james/.gradle/caches/8.13/transforms/095a1a194bf6ebec9333f2bebe1b3c5a/transformed/react-android-0.85.2-release/prefab/modules/jsi/libs/android.arm64-v8a/libjsi.so",
         "/home/james/.gradle/caches/8.13/transforms/095a1a194bf6ebec9333f2bebe1b3c5a/transformed/react-android-0.85.2-release/prefab/modules/reactnative/libs/android.arm64-v8a/libreactnative.so"
       ]
+    },
+    "react_codegen_ReactNativeBlobUtilSpec::@7d3cc6108106e04bb830": {
+      "artifactName": "react_codegen_ReactNativeBlobUtilSpec",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
     },
     "react_codegen_rnsvg::@4f40eb209d0c0b4a3b65": {
       "artifactName": "react_codegen_rnsvg",

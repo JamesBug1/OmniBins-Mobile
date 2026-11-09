@@ -186,12 +186,7 @@ const AlertPage = () => {
 
   return (
     <View style={styles.container}>
-      {/* DIM BACKDROP */}
-      {isDropdownOpen && (
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setIsDropdownOpen(false)} />
-      )}
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} scrollEnabled={!isDropdownOpen}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={[styles.inputGroup, { zIndex: isDropdownOpen ? 1000 : 1 }]}>
           <Text style={styles.label}>Issue Type</Text>
           <TouchableOpacity style={[styles.dropdown, isDropdownOpen && styles.dropdownActive]} onPress={toggleDropdown} activeOpacity={0.8}>
@@ -296,15 +291,6 @@ const AlertPage = () => {
     color: '#6b7280',
     fontWeight: '500',
   },
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    zIndex: 10,
-  },
   dropdown: {
     backgroundColor: '#ffffff',
     borderWidth: 1,
@@ -337,10 +323,6 @@ const AlertPage = () => {
     fontWeight: 'bold',
   },
   optionsContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: PRIMARY_GREEN,

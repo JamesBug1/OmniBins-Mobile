@@ -25,7 +25,7 @@ const BottomNavbar = ({ currentScreen, onNavigate }) => {
   ];
 
   return (
-    <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View style={[styles.bottomNav, { height: 66 + insets.bottom, paddingBottom: insets.bottom }]}>
       {navItems.map((item) => {
         const isActive = currentScreen === item.id;
         return (
@@ -33,15 +33,22 @@ const BottomNavbar = ({ currentScreen, onNavigate }) => {
             key={item.id}
             style={styles.navItem}
             onPress={() => onNavigate(item.id)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={item.label}
           >
             <item.Icon
-              size={26}
+              size={24}
               color={isActive ? PRIMARY_GREEN : INACTIVE_COLOR}
             />
             <Text style={[
               styles.navText,
               isActive && styles.activeNavText
-            ]}>
+            ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
               {item.label}
             </Text>
           </TouchableOpacity>
@@ -53,10 +60,9 @@ const BottomNavbar = ({ currentScreen, onNavigate }) => {
 
 const styles = StyleSheet.create({
   bottomNav: {
-    height: 75,
     backgroundColor: '#ffffff',
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#f1f2f6',
@@ -71,16 +77,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   navItem: {
+    height: 66,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    paddingTop: 10,
+    paddingHorizontal: 2,
   },
   navText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#8e8e93',
     fontWeight: '500',
-    marginTop: 4,
+    marginTop: 3,
+    textAlign: 'center',
   },
   activeNavText: {
     color: PRIMARY_GREEN,

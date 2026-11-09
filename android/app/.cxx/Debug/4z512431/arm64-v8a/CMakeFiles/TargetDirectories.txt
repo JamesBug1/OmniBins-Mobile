@@ -7,6 +7,9 @@
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNFBMessagingTurboModules_autolinked_build/CMakeFiles/react_codegen_RNFBMessagingTurboModules.dir
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNFBMessagingTurboModules_autolinked_build/CMakeFiles/edit_cache.dir
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNFBMessagingTurboModules_autolinked_build/CMakeFiles/rebuild_cache.dir
+/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/ReactNativeBlobUtilSpec_autolinked_build/CMakeFiles/react_codegen_ReactNativeBlobUtilSpec.dir
+/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/ReactNativeBlobUtilSpec_autolinked_build/CMakeFiles/edit_cache.dir
+/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/ReactNativeBlobUtilSpec_autolinked_build/CMakeFiles/rebuild_cache.dir
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNImagePickerSpec_autolinked_build/CMakeFiles/react_codegen_RNImagePickerSpec.dir
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNImagePickerSpec_autolinked_build/CMakeFiles/edit_cache.dir
 /home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNImagePickerSpec_autolinked_build/CMakeFiles/rebuild_cache.dir

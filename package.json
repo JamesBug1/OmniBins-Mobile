@@ -10,12 +10,15 @@
     "test": "jest"
   },
   "dependencies": {
+    "@notifee/react-native": "^9.1.8",
     "@react-native-firebase/app": "^26.4.0",
     "@react-native-firebase/messaging": "^26.4.0",
+    "@supabase/supabase-js": "^2.117.3",
     "android": "^0.0.8",
     "firebase": "^12.12.1",
     "react": "19.2.3",
     "react-native": "0.85.2",
+    "react-native-blob-util": "^0.25.1",
     "react-native-geolocation-service": "^5.3.1",
     "react-native-image-picker": "^8.2.1",
     "react-native-maps": "^1.27.2",

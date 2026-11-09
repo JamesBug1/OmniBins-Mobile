@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { OrangeCleaningIcon, ClipboardCheckIcon } from '../Components/Icons';
+import { getTaskLocation } from '../Components/taskLocation';
 import { auth, db } from '../firebaseConfig';
 import Geolocation from 'react-native-geolocation-service';
 
@@ -269,6 +270,7 @@ const Dashboard = () => {
   const [alerts, setAlerts] = useState([]);
   const [currentUserRecord, setCurrentUserRecord] = useState(null);
   const [teamsData, setTeamsData] = useState({});
+  const [sensorRecords, setSensorRecords] = useState([]);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [weather, setWeather] = useState(null);
   const [weatherMessage, setWeatherMessage] = useState('Loading location settings...');
@@ -281,6 +283,9 @@ const Dashboard = () => {
       return dateA - dateB;
     })
     .slice(0, 3);
+  const activeTasksCount = (tasks || []).filter(
+    (task) => getTaskStatus(task, currentUserRecord, teamsData) !== 'Completed',
+  ).length;
 
   useEffect(() => {
     const currentUser = auth?.currentUser;
@@ -366,7 +371,9 @@ const Dashboard = () => {
           const t = snap.val();
           const items = t ? Object.entries(t).map(([k, v]) => ({ id: k, ...(v || {}) })) : [];
           const filteredItems = currentUserRecord
-            ? items.filter((it) => matchesCurrentStaff(it, currentUserRecord, teamsData))
+            ? items
+                .filter((it) => matchesCurrentStaff(it, currentUserRecord, teamsData))
+                .filter((it) => it.isCapacityTriggered || (!it.recurrence && !it.isRecurringOccurrence))
             : [];
 
           setTasks(filteredItems);
@@ -408,6 +415,19 @@ const Dashboard = () => {
       try { if (typeof reportsUnsub === 'function') reportsUnsub(); } catch (e) {}
     };
   }, [currentUserRecord, teamsData]);
+
+  useEffect(() => {
+    const paths = ['sensor_data1', 'sensor_data2'];
+    const recordsByPath = new Map();
+    const { ref, onValue } = require('firebase/database');
+    const unsubscribers = paths.map(path => onValue(ref(db, path), snapshot => {
+      const values = snapshot.val() || {};
+      recordsByPath.set(path, Object.entries(values).map(([id, record]) => ({ id, ...(record || {}) })));
+      setSensorRecords(Array.from(recordsByPath.values()).flat());
+    }, error => console.warn(`Could not load ${path} locations`, error?.message || error)));
+
+    return () => unsubscribers.forEach(unsubscribeSensorPath => unsubscribeSensorPath());
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -515,7 +535,7 @@ const Dashboard = () => {
         <View style={styles.taskListCard}>
           <View style={styles.sectionHeaderNoPadding}>
             <Text style={styles.sectionTitle}>Task List</Text>
-            <Text style={styles.dateText}>{tasks.length} active</Text>
+            <Text style={styles.dateText}>{activeTasksCount} active</Text>
           </View>
 
           {upcomingTasks.length === 0 ? (
@@ -526,7 +546,7 @@ const Dashboard = () => {
                 <View style={styles.taskListDot} />
                 <View style={styles.taskListContent}>
                   <Text style={styles.taskListTitle}>{task.title || task.name || task.binId || task.bin || 'Task'}</Text>
-                  <Text style={styles.taskListMeta}>{task.location || task.address || task.site || 'No location'} • {formatTaskTime(task)}</Text>
+                  <Text style={styles.taskListMeta}>{getTaskLocation(task, sensorRecords) || task.binId || task.bin || 'No location'} • {formatTaskTime(task)}</Text>
                   <Text style={styles.taskListStatus}>{getTaskStatus(task, currentUserRecord, teamsData)}</Text>
                 </View>
               </View>
@@ -561,7 +581,7 @@ const Dashboard = () => {
 
         {/* --- RECENT ALERTS --- */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Alerts</Text>
+          <Text style={styles.sectionTitle}>Recent reports</Text>
           <TouchableOpacity
             accessibilityRole="button"
             onPress={() => setShowAllAlerts((current) => !current)}
@@ -572,7 +592,7 @@ const Dashboard = () => {
 
         <View style={styles.alertsList}>
           {alerts.length === 0 ? (
-            <Text style={{ paddingHorizontal: 20, color: '#717171' }}>No recent alerts</Text>
+            <Text style={{ paddingHorizontal: 20, color: '#717171' }}>No recent reports</Text>
           ) : (
             (showAllAlerts ? alerts : alerts.slice(0, 3)).map((a) => (
               <View key={a.id + (a.ts||'')} style={styles.alertItem}>

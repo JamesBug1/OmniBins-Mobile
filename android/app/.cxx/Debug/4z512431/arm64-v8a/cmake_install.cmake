@@ -46,6 +46,7 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNFBAppTurboModules_autolinked_build/cmake_install.cmake")
   include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNFBMessagingTurboModules_autolinked_build/cmake_install.cmake")
+  include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/ReactNativeBlobUtilSpec_autolinked_build/cmake_install.cmake")
   include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNImagePickerSpec_autolinked_build/cmake_install.cmake")
   include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/RNMapsSpecs_autolinked_build/cmake_install.cmake")
   include("/home/james/Downloads/Densyuu/OmniBins_Mobile/android/app/.cxx/Debug/4z512431/arm64-v8a/safeareacontext_autolinked_build/cmake_install.cmake")

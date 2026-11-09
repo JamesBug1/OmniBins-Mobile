@@ -16,7 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import { ChevronRightIcon } from '../Components/Icons';
-import app, { signOutUser, auth, db, registerDeviceTokenForCurrentUser } from '../firebaseConfig';
+import app, { signOutUser, auth, db, registerDeviceTokenForCurrentUser, unregisterDeviceTokenForCurrentUser } from '../firebaseConfig';
 import { ref, get, update } from 'firebase/database';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
@@ -144,59 +144,20 @@ const ProfilePage = ({ onLogout }) => {
   };
 
   const requestNotificationPermission = async () => {
-    const registerNotifications = async () => {
-      try {
-        const token = await registerDeviceTokenForCurrentUser(userRecord?.id);
-        if (!token) {
-          await persistPreference('allowNotifications', false);
-          setAllowNotifications(false);
-          return false;
-        }
-
-        await persistPreference('allowNotifications', true);
-        setAllowNotifications(true);
-        return true;
-      } catch (e) {
-        console.warn('Notification registration failed', e);
-        Alert.alert('Notifications unavailable', e?.message || 'Could not register this device for notifications.');
-        return null;
-      }
-    };
-
-    if (Platform.OS === 'android') {
-      if (Number(Platform.Version) < 33) {
-        const registered = await registerNotifications();
-        if (registered === false) {
-          Alert.alert('Notifications unavailable', 'Could not register this device for notifications. Please try again.');
-        }
+    try {
+      const token = await registerDeviceTokenForCurrentUser(userRecord?.id);
+      if (!token) {
+        setAllowNotifications(false);
+        setUserRecord(prev => ({ ...(prev || {}), allowNotifications: false }));
+        Alert.alert('Notifications blocked', 'Allow notifications for OmniBins in your phone settings, then try again.');
         return;
       }
 
-      try {
-        const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        const granted = result === PermissionsAndroid.RESULTS.GRANTED;
-        if (!granted) {
-          await persistPreference('allowNotifications', false);
-          setAllowNotifications(false);
-          Alert.alert('Notifications blocked', 'Enable notifications in your phone settings to receive updates.');
-          return;
-        }
-
-        const registered = await registerNotifications();
-        if (registered === false) {
-          Alert.alert('Notifications unavailable', 'Could not register this device for notifications. Please try again.');
-        }
-      } catch (e) {
-        console.warn('Notification permission request failed', e);
-        Alert.alert('Permission error', e?.message || 'Unable to request notification permission');
-      }
-      return;
-    }
-
-    const registered = await registerNotifications();
-    if (registered === false) {
-      Alert.alert('Notification permission', 'Please enable notifications for OmniBins in your iPhone Settings.');
-      Linking.openSettings();
+      setAllowNotifications(true);
+      setUserRecord(prev => ({ ...(prev || {}), allowNotifications: true }));
+    } catch (e) {
+      console.warn('Notification registration failed', e);
+      Alert.alert('Notifications unavailable', e?.message || 'Could not register this device for notifications.');
     }
   };
 
@@ -341,8 +302,13 @@ const ProfilePage = ({ onLogout }) => {
                 if (value) {
                   await requestNotificationPermission();
                 } else {
-                  await persistPreference('allowNotifications', false);
-                  setAllowNotifications(false);
+                  try {
+                    await unregisterDeviceTokenForCurrentUser(userRecord?.id);
+                    setAllowNotifications(false);
+                    setUserRecord(prev => ({ ...(prev || {}), allowNotifications: false }));
+                  } catch (e) {
+                    Alert.alert('Notifications unavailable', e?.message || 'Could not disable notifications.');
+                  }
                 }
               }}
               trackColor={{ false: '#d1d5db', true: '#9ae6b4' }}

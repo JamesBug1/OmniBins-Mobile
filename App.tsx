@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { getMessaging, onMessage } from '@react-native-firebase/messaging';
+import notifee from '@notifee/react-native';
+import { ensureTaskNotificationChannel } from './firebaseConfig';
 import LoadingScreen from './Pages/LoadingScreen';
 import LoginPage from './Pages/LoginPage';
 import Dashboard from './Pages/Dashboard';
@@ -24,6 +27,20 @@ const PlaceholderScreen = ({ name }: { name: string }) => (
 
 const App = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('Splash');
+
+  useEffect(() => {
+    ensureTaskNotificationChannel().catch(error => console.warn('Could not create task notification channel', error));
+    return onMessage(getMessaging(), async remoteMessage => {
+      await notifee.displayNotification({
+        title: remoteMessage.notification?.title || 'OmniBins update',
+        body: remoteMessage.notification?.body || 'You have a new update.',
+        android: {
+          channelId: 'task-updates-v2',
+          pressAction: { id: 'default' },
+        },
+      });
+    });
+  }, []);
 
   const handleFinishLoading = () => setCurrentScreen('Login');
   const handleLogin = () => setCurrentScreen('Dashboard');
